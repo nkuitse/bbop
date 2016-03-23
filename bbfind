@@ -1,0 +1,75 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use constant SEGLEN => 64*1024*1024;
+
+sub usage;
+sub fatal;
+
+chdir($ENV{'BB_ROOT'} ||= '/var/local/backup') or fatal "chdir $ENV{BB_ROOT}: $!";
+
+usage if @ARGV < 2;
+my $t = shift;
+my @targets = grep { $_ eq $t || m{^$t/} } all_targets();
+my @eum = map { glob("targets/$_/series/*/[0-9]*.eum") } @targets;
+my %tsb2j;
+foreach my $f (@ARGV) {
+    open my $fh, '-|', 'fgrep', ' '.$f, @eum or fatal "fgrep: $!";
+    while (<$fh>) {
+        if (m{^(targets/(\S+?)/series/(\d+)/(\d[^.]+))\.eum:(.)(.)((?: [a-z*@#]\d+)+) (.+)}) {
+            my ($base, $target, $series, $backup, $status, $typechar, $stat, $path) = ($1, $2, $3, $4, $5, $6, $7, $8);
+            if ($f =~ m{/$}) {
+                next if substr($path, 0, length $f) ne $f;
+            }
+            else {
+                next if $path ne $f;
+            }
+            # my $job = '-';
+            my $seg = '-';
+            if ($status eq '+' && $typechar =~ /[fl]/) {
+                $_ = <$fh>;
+                fatal "fgrep: no file locator" if !defined $_;
+                if (m{^(targets/\S+?/series/\d+/\d[^.]+)\.eum:\^(\d+) \@(\d+) \*(\d+)(?: \#\S+)? (.+)}) {
+                    fatal if $1 ne $base;
+                    fatal if $5 ne $path;
+                    my @seg = ($2);
+                    my $end = $3 + $4;
+                    while ($end > SEGLEN) {
+                        push @seg, $seg[-1]+1;
+                        $end -= SEGLEN;
+                    }
+                    # $job = $tsb2j{"$target/$series/$backup"} ||= job($target, $series, $backup);
+                    $seg = join(',', @seg);
+                    # $stat =~ s/ \*(\d+)$//;
+                }
+            }
+            printf "%s %s %s %s %s%s%s %s\n", $target, $series, $backup, $seg, $status, $typechar, $stat, $path;
+            # printf "%s %s %s %s %s %s%s%s %s\n", $target, $series, $backup, $job, $seg, $status, $typechar, $stat, $path;
+        }
+    }
+}
+
+# --- Functions
+
+sub all_targets {
+    open my $fh, '<', 'targets.list' or fatal "open targets.list: $!";
+    my @t;
+    while (<$fh>) {
+        chomp;
+        push @t, $_;
+    }
+    return @t;
+}
+
+sub job {
+    my $rcpt = sprintf("targets/%s/series/%d/%s.t0receipt", @_);
+    return '-' if ! -e $rcpt;
+    open my $fh, '<', $rcpt or fatal "open $rcpt: $!";
+    while (<$fh>) {
+        return $1 if /^job (\S+)/;
+    }
+    return '-';
+}
+

@@ -1,0 +1,205 @@
+#!/bin/zsh -e
+
+typeset PROG=$0
+typeset NAME=$0:t
+typeset -a targets
+
+[[ -n $BB_ROOT ]] || export BB_ROOT=/var/local/backup
+cd $BB_ROOT
+
+main() {
+    [[ $NAME == bb* ]] || usage
+    typeset cmd=${NAME[3,-1]}
+    case $cmd in
+        (op) backup "$@" ;;
+        (*)  cmd_$cmd "$@" ;;
+    esac
+}
+
+backup() {
+    typeset opt yes=false all=false
+    while getopts :ya opt; do
+        case $opt in
+            (y) yes=true ;;
+            (a) all=true ;;
+            (*) usage ;;
+        esac
+    done
+    shift $(( OPTIND - 1 ))
+    if (( $# == 0 )); then
+        $all || usage
+        if ! $yes && [[ -t 0 ]]; then
+            if ! read -q '?Back up all targets? [yN] '; then
+                [[ $REPLY == $'\n' ]] || print
+                cancel
+            fi
+            yes=true
+            print
+        fi
+        set -- $(zubak lt)
+    fi
+    targets=( $(targets $@) )
+    (( $#targets > 0 )) || fatal 'nothing to back up'
+    if ! $yes && [[ -t 0 ]]; then
+        print 'Targets selected for backup:' >&2
+        for t in $targets; do print "  * $t"; done >&2
+        if ! read -q '?OK to proceed? [yN] '; then
+            [[ $REPLY == $'\n' ]] || print
+            cancel
+        fi
+    fi
+    for t in $targets; do
+        print zubak up $t
+    done
+}
+
+cmd_last() {
+    targets=( $(targets "$@") )
+    printf '%-16s  %6s  %6s  %7s  %s\n' Date Files Size 'Tape(s)' Target
+    for t in $targets; do
+        s=current
+        for b in $(zubak lb $t $s | tail -n1); do
+            parse-date $b | read y m d H M S
+            bsize=$(backup-size $t $s $b)
+            bcount=$(backup-count $t $s $b)
+            tapes="$(backup-tapes $t $s $b)"
+            printf '%04d-%02d-%02d %02d:%02d  %6.6s  %6.6s  %7s  %s\n' $y $m $d $H $M $bcount $bsize "$tapes" $t
+        done
+    done | sort
+}
+
+### cmd_find() {
+###     (( $# )) || usage
+###     typeset t=$1 s b m; shift
+###     typeset -a eum
+###     integer n=0
+###     cd targets/
+###     eum=( $t/**/series/[0-9]*/[0-9]*.eum(N) )
+###     (( $#eum > 0 )) || fatal "no targets, or no backups: $t"
+###     for f in $@; do
+###         f=$(strip-final-slashes $f)
+###         egrep -H "^[+^].*[ :]$f\$" $eum
+###     done |
+###     perl -dne '
+###         BEGIN { $n = 0; $pstat = ""; }
+###         next if !m{^((.+?)/series/([0-9]+)/([^.]+))\.eum:(..(?: [a-z^*@#]\d+)+) (.+)};
+###         $n++;
+###         ($base, $t, $s, $b, $stat, $file) = ($1, $2, $3, $4, $5, $6);
+###         if ($stat =~ /^\+[fl]/) {
+###             $ = <STDIN>; chomp $c;
+###             $c =~ /(\^(\d+) \@(\d+) \*(\d+)(?: \#(\S+))?) (.+)/ or die;
+###             $statp = $1;
+###             $stat =~ s/ \*(\d+)/ $statp/;
+###             $j = $job{"$t/$s/$b"} ||= job($t, $s, $b);
+###         }
+###         else { $j = "" }
+###         print "$t $s $b <$j> $stat $file\n";
+###         END { exit 2 if !$n }
+###         sub job {
+###             my ($t, $s, $b) = @_; my $j = "";
+###             if (open JOB, "<", "$t/series/$s/$b.t0receipt") {
+###                 while (<JOB>) { $j = $1, last if /^job (\S+)/ }
+###             }
+###             return $j;
+###         }
+###     ' |
+###     while read xxx; do
+###         :
+###     done
+### }
+
+# --- Functions
+
+find-on-tape() {
+    while read t s b m; do
+        f=$(perl -e '$m=shift; $m =~ m{[^/]+(.+)}; print $1, "\n"')
+        if [[ ! -e $s/$b.t0receipt ]]; then
+            print "$t $s $b <> $m"
+            continue
+        fi
+        #print perl -ne ... $t $s $b "'$m'" \< $PWD/$s/$b.t0receipt >&2
+        perl -e '
+            BEGIN { ($tape, $n, $tgt, $s, $bkup, $m) = (qw(- -), @ARGV) }
+            die if $m !~ /^\^(\d+)/;
+            $b = $1;
+            die if $m !~ m{[^/]+(/.*)};
+            $f = $1;
+            while (<STDIN>) {
+                if (/^J (\S+)/) {
+                    $j = $1;
+                }
+                elsif (/^T (\S+) filenum (\d+)/) {
+                    ($tape, $n) = ($1, $2);
+                }
+                elsif (/^F (\d+) (\S+)\.(\d+)\.gz/) {
+                    if ($3 == $b) {
+                        print "$tgt $s $bkup <$j:$b:$tape:$n> $m\n";
+                    }
+                }
+            }
+        ' $t $s $b $m < $s/$b.t0receipt
+    done
+}
+
+strip-final-slashes() {
+    typeset f=$1
+    while (( $#f > 1 )) && [[ $f == */ ]]; do
+        # Strip final /, //, etc.
+        f="${f[1,-2]}"
+    done
+    print -- "$f"
+}
+
+parse-date() {
+    print ${1[1,4]} ${1[5,6]} ${1[7,8]} ${1[10,11]} ${1[12,13]} ${1[14,15]}
+}
+
+targets() {
+    targets=()
+    for t in $@; do
+        if [[ $t == */* ]]; then
+            targets+=$t
+        elif [[ -e clients/$t ]]; then
+            targets+=( $(zubak lt | grep "^$t/") )
+        elif [[ -e targets/$t ]]; then
+            targets+=$t
+        else
+            fatal "no such target: $t"
+        fi
+    done
+    (( $#targets > 0 )) || targets=( $(zubak lt) )
+    print -l $targets
+}
+
+backup-size() {
+    typeset t=$1 s=$2 b=$3
+    du -hc targets/$t/series/$s/$b.* | awk '{t=$1} END {print t}'
+}
+
+backup-count() {
+    typeset t=$1 s=$2 b=$3
+    grep -c '^+' targets/$t/series/$s/$b.eum | num2hum
+}
+
+backup-tapes() {
+    typeset t=$1 s=$2 b=$3
+    typeset rcpt=targets/$t/series/$s/$b.t0receipt
+    [[ ! -e $rcpt ]] || perl -ne '$t{$1}++ if /^T (\S+)/; END { print $_, "\n" for sort keys %t }' $rcpt
+}
+
+usage() {
+    print "usage: ${PROG:t} CMD [ARG...]" >&2
+    exit 1
+}
+
+cancel() {
+    print Cancelled >&2
+    exit 0
+}
+
+fatal() {
+    print ${PROG:t}: "$@" >&2
+    exit 2
+}
+
+main "$@"
