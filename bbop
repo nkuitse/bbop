@@ -68,46 +68,6 @@ cmd_last() {
     done | sort
 }
 
-### cmd_find() {
-###     (( $# )) || usage
-###     typeset t=$1 s b m; shift
-###     typeset -a eum
-###     integer n=0
-###     cd targets/
-###     eum=( $t/**/series/[0-9]*/[0-9]*.eum(N) )
-###     (( $#eum > 0 )) || fatal "no targets, or no backups: $t"
-###     for f in $@; do
-###         f=$(strip-final-slashes $f)
-###         egrep -H "^[+^].*[ :]$f\$" $eum
-###     done |
-###     perl -dne '
-###         BEGIN { $n = 0; $pstat = ""; }
-###         next if !m{^((.+?)/series/([0-9]+)/([^.]+))\.eum:(..(?: [a-z^*@#]\d+)+) (.+)};
-###         $n++;
-###         ($base, $t, $s, $b, $stat, $file) = ($1, $2, $3, $4, $5, $6);
-###         if ($stat =~ /^\+[fl]/) {
-###             $ = <STDIN>; chomp $c;
-###             $c =~ /(\^(\d+) \@(\d+) \*(\d+)(?: \#(\S+))?) (.+)/ or die;
-###             $statp = $1;
-###             $stat =~ s/ \*(\d+)/ $statp/;
-###             $j = $job{"$t/$s/$b"} ||= job($t, $s, $b);
-###         }
-###         else { $j = "" }
-###         print "$t $s $b <$j> $stat $file\n";
-###         END { exit 2 if !$n }
-###         sub job {
-###             my ($t, $s, $b) = @_; my $j = "";
-###             if (open JOB, "<", "$t/series/$s/$b.t0receipt") {
-###                 while (<JOB>) { $j = $1, last if /^job (\S+)/ }
-###             }
-###             return $j;
-###         }
-###     ' |
-###     while read xxx; do
-###         :
-###     done
-### }
-
 # --- Functions
 
 find-on-tape() {
