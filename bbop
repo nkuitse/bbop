@@ -29,12 +29,8 @@ backup() {
     if (( $# == 0 )); then
         $all || usage
         if ! $yes && [[ -t 0 ]]; then
-            if ! read -q '?Back up all targets? [yN] '; then
-                [[ $REPLY == $'\n' ]] || print
-                cancel
-            fi
+            askbool 'Back up all targets?' || cancel
             yes=true
-            print
         fi
         set -- $(zubak lt)
     fi
@@ -43,10 +39,7 @@ backup() {
     if ! $yes && [[ -t 0 ]]; then
         print 'Targets selected for backup:' >&2
         for t in $targets; do print "  * $t"; done >&2
-        if ! read -q '?OK to proceed? [yN] '; then
-            [[ $REPLY == $'\n' ]] || print
-            cancel
-        fi
+        askbool 'OK to proceed?' || cancel
     fi
     for t in $targets; do
         print zubak up $t
@@ -69,6 +62,13 @@ cmd_last() {
 }
 
 # --- Functions
+
+askbool() {
+    read -q "?$1 [yN] "
+    integer err=$?
+    [[ $REPLY == $'\n' ]] || print
+    return $err
+}
 
 find-on-tape() {
     while read t s b m; do
