@@ -6,9 +6,10 @@ typeset -a targets
 typeset dryrun=false verbose=false
 
 [[ -n $BB_ROOT ]] || export BB_ROOT=/var/local/backup
-cd $BB_ROOT
 
 main() {
+    [[ -x $BB_ROOT ]] || fatal "root $BB_ROOT not accessible"
+    cd $BB_ROOT || return
     [[ $NAME == bb* ]] || usage
     typeset cmd=${NAME[3,-1]}
     case $cmd in
@@ -19,7 +20,7 @@ main() {
 
 backup() {
     typeset opt yes=false all=false
-    while getopts :nya opt; do
+    while getopts :nvya opt; do
         case $opt in
             (n) dryrun=true ;;
             (v) verbose=true ;;
@@ -47,6 +48,30 @@ backup() {
     for t in $targets; do
         run zubak up $t
     done
+}
+
+cmd_start() {
+    typeset opt all=false
+    typeset -a bbargs
+    while getopts :vya opt; do
+        case $opt in
+            (v) bbargs+=( -v ) ;;
+            (y) yes=true ;;
+            (a) all=true; bbargs+=( -a ) ;;
+            (*) usage ;;
+        esac
+    done
+    shift $(( OPTIND - 1 ))
+    if (( $# == 0 )); then
+        $all || usage
+        if ! $yes && [[ -t 0 ]]; then
+            askbool 'Back up all targets?' || cancel
+        fi
+        set -- $(zubak lt)
+    fi
+    targets=( $(targets $@) )
+    $all || (( $#targets > 0 )) || fatal 'nothing to back up'
+    bbop -y $bbargs $targets > $root/run.$$.log 2>&1 &
 }
 
 cmd_last() {
@@ -164,7 +189,7 @@ backup-tapes() {
 }
 
 usage() {
-    print "usage: ${PROG:t} CMD [ARG...]" >&2
+    print "usage: ${PROG:t} [-nvy] [-a|TARGET|CLIENT...]" >&2
     exit 1
 }
 
