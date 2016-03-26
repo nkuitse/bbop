@@ -89,6 +89,48 @@ cmd_last() {
     done | sort
 }
 
+cmd_new() {
+    (( $# == 1 )) || usage '[-p TARGET] TARGET'
+    typeset t="${argv[-1]}"
+    [[ ! -e targets/$t ]] || fatal "target already exists: $t"
+    zubak nt "$@"
+    [[ -e targets/$t ]] || fatal "target not created: $t"
+    [[ -e targets/$t/bin/zubak-begin ]] || make-zubak-begin $t
+    [[ -e targets/$t/bin/zubak-end   ]] || make-zubak-end   $t
+    vim targets/$t/bin/zubak-find
+}
+
+make-zubak-begin() {
+    typeset t=$1 host=$1:h
+    if [[ $h != $(hostname -s) && $h != $HOST:r ]]; then
+        cat > targets/$t/bin/zubak-begin <<EOS
+#!/bin/zsh -e
+mkdir ${host}:
+sshfs ${host}:/ ${host}:/
+sleep 1
+EOS
+        chmod a+x targets/$t/bin/zubak-begin
+    fi
+}
+
+make-zubak-end() {
+    typeset t=$1 host=$1:h
+    if [[ $h != $(hostname -s) && $h != $HOST:r ]]; then
+        cat > targets/$t/bin/zubak-end <<EOS
+#!/bin/zsh -e
+umount ${host}:
+rmdir ${host}:
+exec zubak-mkt0job "$@"
+EOS
+        chmod a+x targets/$t/bin/zubak-end
+    fi
+}
+
+cmd_conf() {
+    targets=( $(targets "$@") )
+    (( $#targets == 1 )) || fatal 'no targets found'
+}
+
 # --- Functions
 
 note() {
@@ -189,7 +231,7 @@ backup-tapes() {
 }
 
 usage() {
-    print "usage: ${PROG:t} [-nvy] [-a|TARGET|CLIENT...]" >&2
+    print "usage: ${PROG:t} ${1:-'[-nvy] [-a|TARGET|CLIENT...'}" >&2
     exit 1
 }
 
