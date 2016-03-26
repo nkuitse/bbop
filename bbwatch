@@ -1,0 +1,40 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use Getopt::Long
+    qw(:config posix_default gnu_compat require_order bundling no_ignore_case);
+
+my $backup_root = '/var/local/backup';
+my $t0p_root = '/var/local/t0p';
+
+my $wait;
+
+my @targets = `zubak lt`; chomp @targets;
+my @jobs = `t0job -lv | fgrep ' w ' | cut -c 5-`; chomp @jobs;
+
+my %target_status = target_status(@targets);
+my %job_status = job_status(@jobs);
+
+my @running = running();
+while (!@running && $wait) {
+    sleep 5;
+    @running = running();
+}
+
+sub running {
+    my ($t, $j, $s);
+    while ($t, $s) = each %target_status) {
+        ;
+    }
+}
+
+sub target_status {
+    map { $_ => substr(basename(glob("$backup_root/targets/$_/\@*")),1) } @_;
+}
+
+sub job_status {
+    map { $_ => substr(basename(glob("$t0p_root/job/$_/\@*")),1) } @_;
+}
+
