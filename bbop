@@ -20,12 +20,14 @@ main() {
 
 backup() {
     typeset opt yes=false all=false
-    while getopts :nvya opt; do
+    typeset -a zubakopts
+    while getopts :nvyal opt; do
         case $opt in
             (n) dryrun=true ;;
             (v) verbose=true ;;
             (y) yes=true ;;
             (a) all=true ;;
+            (l) zubakopts+=( -l ) ;;
             (*) usage ;;
         esac
     done
@@ -46,7 +48,7 @@ backup() {
         askbool 'OK to proceed?' || cancel
     fi
     for t in $targets; do
-        run zubak up $t
+        run zubak up $zubakopts $t
     done
 }
 
@@ -71,7 +73,7 @@ cmd_start() {
     fi
     targets=( $(targets $@) )
     $all || (( $#targets > 0 )) || fatal 'nothing to back up'
-    bbop -y $bbargs $targets > $root/run.$$.log 2>&1 &
+    bbop -y $bbargs $targets > bbop.$$.log 2>&1 &
 }
 
 cmd_last() {
@@ -90,19 +92,43 @@ cmd_last() {
 }
 
 cmd_new() {
-    (( $# == 1 )) || usage '[-p TARGET] TARGET'
+    typeset opt host root
+    (( $# == 1 )) || usage TARGET
+    typeset t=$1; shift
+    case $t in
+        (*/*)
+            host=$t:h
+            root=/$t:t
+            [[ $host$root == $t ]] || usage TARGET
+            ;;
+    esac
+    typeset host=$( { print $HOST:r; hostname -s } | sort -u | fgrep -v . )
     typeset t="${argv[-1]}"
     [[ ! -e targets/$t ]] || fatal "target already exists: $t"
     zubak nt "$@"
     [[ -e targets/$t ]] || fatal "target not created: $t"
-    [[ -e targets/$t/bin/zubak-begin ]] || make-zubak-begin $t
-    [[ -e targets/$t/bin/zubak-end   ]] || make-zubak-end   $t
-    vim targets/$t/bin/zubak-find
+    [[ -e targets/$t/bin/zubak-begin ]] || make-zubak-begin $t $host
+    [[ -e targets/$t/bin/zubak-end   ]] || make-zubak-end   $t $host
+    make-zubak-find $t $host $root
+}
+
+make-zubak-find() {
+    typeset t=$1 host=$2 root=$3
+    typeset -a roots
+    case $root in
+        (user) roots=( ${host}:/home ${host}:root ) ;;
+        (*)    roots=( ${host}:/${root} ) ;;
+    esac
+    cat > targest/$t/bin/zubak-find <<EOS
+#!/bin/zsh -e
+find $roots ...
+EOS
 }
 
 make-zubak-begin() {
-    typeset t=$1 host=$1:h
+    typeset t=$1 host=$2
     if [[ $h != $(hostname -s) && $h != $HOST:r ]]; then
+        print 'Create zubak-begin' >&2
         cat > targets/$t/bin/zubak-begin <<EOS
 #!/bin/zsh -e
 mkdir ${host}:
@@ -114,8 +140,9 @@ EOS
 }
 
 make-zubak-end() {
-    typeset t=$1 host=$1:h
+    typeset t=$1 host=$2
     if [[ $h != $(hostname -s) && $h != $HOST:r ]]; then
+        print 'Create zubak-end' >&2
         cat > targets/$t/bin/zubak-end <<EOS
 #!/bin/zsh -e
 umount ${host}:
