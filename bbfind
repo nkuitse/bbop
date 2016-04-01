@@ -14,17 +14,19 @@ usage if @ARGV < 2;
 my $t = shift;
 my @targets = grep { $_ eq $t || m{^$t/} } all_targets();
 my @eum = map { glob("targets/$_/series/*/[0-9]*.eum") } @targets;
+fatal "Can't find any targets: $t" if !@eum;
 my %tsb2j;
 foreach my $f (@ARGV) {
-    open my $fh, '-|', 'fgrep', ' '.$f, @eum or fatal "fgrep: $!";
+    open my $fh, '-|', 'fgrep', $f, @eum or fatal "fgrep: $!";
     while (<$fh>) {
         if (m{^(targets/(\S+?)/series/(\d+)/(\d[^.]+))\.eum:(.)(.)((?: [a-z*@#]\d+)+) (.+)}) {
             my ($base, $target, $series, $backup, $status, $typechar, $stat, $path) = ($1, $2, $3, $4, $5, $6, $7, $8);
+            (my $munged_path = $path) =~ s{^\.[^./]+\./}{/};
             if ($f =~ m{/$}) {
-                next if substr($path, 0, length $f) ne $f;
+                next if substr($munged_path, 0, length $f) ne $f;
             }
             else {
-                next if $path ne $f;
+                next if $munged_path ne $f;
             }
             # my $job = '-';
             my $seg = '-';
@@ -33,9 +35,10 @@ foreach my $f (@ARGV) {
                 fatal "fgrep: no file locator" if !defined $_;
                 if (m{^(targets/\S+?/series/\d+/\d[^.]+)\.eum:\^(\d+) \@(\d+) \*(\d+)(?: \#\S+)? (.+)}) {
                     fatal if $1 ne $base;
-                    fatal if $5 ne $path;
                     my @seg = ($2);
                     my $end = $3 + $4;
+                    (my $mp = $5) =~ s{^\.[^./]+\./}{/};
+                    fatal if $mp ne $munged_path;
                     while ($end > SEGLEN) {
                         push @seg, $seg[-1]+1;
                         $end -= SEGLEN;
@@ -46,7 +49,6 @@ foreach my $f (@ARGV) {
                 }
             }
             printf "%s %s %s %s %s%s%s %s\n", $target, $series, $backup, $seg, $status, $typechar, $stat, $path;
-            # printf "%s %s %s %s %s %s%s%s %s\n", $target, $series, $backup, $job, $seg, $status, $typechar, $stat, $path;
         }
     }
 }
@@ -71,5 +73,15 @@ sub job {
         return $1 if /^job (\S+)/;
     }
     return '-';
+}
+
+sub usage {
+    print STDERR "usage: bbfind ...\n";
+    exit 1;
+}
+
+sub fatal {
+    print STDERR "bbfind: $_\n" for @_;
+    exit 2;
 }
 
