@@ -245,19 +245,17 @@ parse-date() {
 }
 
 targets() {
-    targets=()
+    (( $# > 0 )) || targets=( $(zubak lt) )
     for t in $@; do
         if [[ $t == */* ]]; then
             targets+=$t
-        elif [[ -e clients/$t ]]; then
-            targets+=( $(zubak lt | grep "^$t/") )
-        elif [[ -e targets/$t ]]; then
+        elif [[ -e targets/$t/series ]]; then
             targets+=$t
         else
-            fatal "no such target: $t"
+            targets+=( $(zubak lt | grep "^$t/") )
         fi
     done
-    (( $#targets > 0 )) || targets=( $(zubak lt) )
+    (( $#targets > 0 )) || fatal "no such target: $t"
     print -l $targets
 }
 
