@@ -3,19 +3,30 @@
 use strict;
 use warnings;
 
+use File::Basename qw(basename dirname);
 use Getopt::Long
     qw(:config posix_default gnu_compat require_order bundling no_ignore_case);
+
+(my $prog = $0) =~ s{.+/}{};
+
+sub usage;
+sub fatal;
 
 my $backup_root = '/var/local/backup';
 my $t0p_root = '/var/local/t0p';
 
 my $wait;
 
-my @targets = `zubak lt`; chomp @targets;
-my @jobs = `t0job -lv | fgrep ' w ' | cut -c 5-`; chomp @jobs;
+my @targets = `zubak lt`;
+fatal "read targets" if $? >> 8;
+chomp @targets;
 
-my %target_status = target_status(@targets);
-my %job_status = job_status(@jobs);
+my @jobs = `t0job -lv | fgrep ' w ' | cut -c 5-`;
+fatal "read jobs" if $? >> 8;
+chomp @jobs;
+
+my %target_status = all_target_statuses(@targets);
+my %job_status = all_job_statuses(@jobs);
 
 my @running = running();
 while (!@running && $wait) {
@@ -24,17 +35,29 @@ while (!@running && $wait) {
 }
 
 sub running {
-    my ($t, $j, $s);
-    while ($t, $s) = each %target_status) {
-        ;
+    foreach my $t (keys %target_status) {
+        my $s = $target_status{$t};
+        delete $target_status{$t}, next if $s eq 'done';
+    }
+    foreach my $t (keys %target_status) {
+        my $s = $target_status{$t};
+        delete $target_status{$t}, next if $s eq 'done';
     }
 }
 
-sub target_status {
-    map { $_ => substr(basename(glob("$backup_root/targets/$_/\@*")),1) } @_;
+sub all_target_statuses {
+    map {
+        $_ => substr(basename(glob("$backup_root/targets/$_/\@*")),1)
+    } @_;
 }
 
-sub job_status {
-    map { $_ => substr(basename(glob("$t0p_root/job/$_/\@*")),1) } @_;
+sub all_job_statuses {
+    map {
+        $_ => substr(basename(glob("$t0p_root/job/$_/\@*")),1)
+    } @_;
 }
 
+sub fatal {
+    print $prog, ': ', @_, "\n";
+    exit 2;
+}
