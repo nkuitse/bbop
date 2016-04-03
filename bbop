@@ -105,8 +105,8 @@ cmd_last() {
                 bcount=$(backup-count $t $s $b)
                 tapes="$(backup-tapes $t $s $b)"
                 printf '%04d-%02d-%02d %02d:%02d  %4s  %6.6s  %6.6s  %7s  %s\n' $y $m $d $H $M $bmode $bcount $bsize "$tapes" $t
+                $all || break
             fi
-            $all || break
         done
     done | sort
 }
