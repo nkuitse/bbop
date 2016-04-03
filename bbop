@@ -77,16 +77,36 @@ cmd_start() {
 }
 
 cmd_last() {
+    typeset opt mode all=false
+    while getopts :afi opt; do
+        case $opt in
+            (a) all=true ;;
+            (f) mode=full ;;
+            (i) mode=incr ;;
+            (*) usage ;;
+        esac
+    done
+    shift $(( OPTIND - 1 ))
     targets=( $(targets "$@") )
-    printf '%-16s  %6s  %6s  %7s  %s\n' Date Files Size 'Tape(s)' Target
+    printf '%-16s  %4s  %6s  %6s  %7s  %s\n' Date Mode Files Size 'Tape(s)' Target
+    typeset -a batches
     for t in $targets; do
         s=current
-        for b in $(zubak lb $t $s | tail -n1); do
-            parse-date $b | read y m d H M S
-            bsize=$(backup-size $t $s $b)
-            bcount=$(backup-count $t $s $b)
-            tapes="$(backup-tapes $t $s $b)"
-            printf '%04d-%02d-%02d %02d:%02d  %6.6s  %6.6s  %7s  %s\n' $y $m $d $H $M $bcount $bsize "$tapes" $t
+        batches=( $(zubak lb $t $s | tac) )
+        if (( $#batches == 0 )); then
+            ! $all || print -- "---------- --:--  ----       -       -        -  $t"
+            continue
+        fi
+        for b in $batches; do
+            bmode=$(backup-mode $t $s $b)
+            if [[ -z $mode || $bmode == $mode ]]; then
+                parse-date $b | read y m d H M S
+                bsize=$(backup-size $t $s $b)
+                bcount=$(backup-count $t $s $b)
+                tapes="$(backup-tapes $t $s $b)"
+                printf '%04d-%02d-%02d %02d:%02d  %4s  %6.6s  %6.6s  %7s  %s\n' $y $m $d $H $M $bmode $bcount $bsize "$tapes" $t
+            fi
+            $all || break
         done
     done | sort
 }
@@ -244,6 +264,11 @@ targets() {
 backup-size() {
     typeset t=$1 s=$2 b=$3
     du -hc targets/$t/series/$s/$b.* | awk '{t=$1} END {print t}'
+}
+
+backup-mode() {
+    typeset t=$1 s=$2 b=$3
+    awk '/^mode / {print $2; exit}' targets/$t/series/$s/$b.backup
 }
 
 backup-count() {
