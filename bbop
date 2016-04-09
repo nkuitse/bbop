@@ -52,7 +52,7 @@ backup() {
         run zubak up $zubakopts $t
     done
     print 'Write jobs to tape' >&2
-    t0write -a
+    run t0write -a
     print 'Done' >&2
 }
 
@@ -136,6 +136,85 @@ cmd_new() {
     make-zubak-find $t $host $root
 }
 
+cmd_conf() {
+    targets=( $(targets "$@") )
+    (( $#targets == 1 )) || fatal 'no targets found'
+}
+
+cmd_queue() {
+    typeset opt mode=list
+    typeset -a qdirs
+    while getopts :alr0123456789 opt; do
+        case $opt in
+            (a) mode=add ;;
+            (l) mode=list ;;
+            (r) mode=run ;;
+            ([0-9])
+                qdirs+=queue/$opt ;;
+        esac
+    done
+    shift $(( OPTIND - 1 ))
+    if [[ $mode == list ]]; then
+        (( $#qdirs )) || qdirs=( queue/[0-9](/N) )
+        (( $#qdirs )) || exit 0
+        find -H $qdirs -type f |
+        while IFS=/ read q prio uuid; do
+            print $prio $uuid $(cat $q/$prio/$uuid)
+        done
+    elif [[ $mode == add ]]; then
+        if (( $# == 0 )); then
+            usage
+        elif (( $#qdirs == 0 )); then
+            qdirs=( queue/5 )
+        elif (( $#qdirs > 1 )); then
+            usage
+        fi
+        mkdir -p ${qdirs[1]}
+        print -l $(targets "$@") | tee ${qdirs[1]}/$(uuidgen)
+    fi
+}
+
+cmd_run() {
+    typeset opt
+    typeset -a qdirs bbopargs
+    while getopts :0123456789y opt; do
+        case $opt in
+            ([0-9])
+                qdirs+=queue/$opt ;;
+            (y) bbopargs+=( -y ) ;;
+            (*) usage ;;
+        esac
+    done
+    (( $#qdirs )) || qdirs=( queue/[0-9](/N) )
+    (( $#qdirs )) || exit 0
+    set -- $(find -H $qdirs -type f | xargs sort -u)
+    (( $# )) || exit 0
+    bbop $bbopargs "$@"
+}
+
+# --- Functions
+
+note() {
+    if [[ -t 1 ]]; then
+        print -- "\e[35;1m$*\e[0m"
+    else
+        print -- "$*"
+    fi
+}
+
+run() {
+    note "$*"
+    $dryrun && print '  (dry run)'
+    $dryrun || "$@"
+}
+
+askbool() {
+    read -q "?$1 [yN] "
+    integer err=$?
+    [[ $REPLY == $'\n' ]] || print
+    return $err
+}
+
 make-zubak-find() {
     typeset t=$1 host=$2 root=$3
     typeset -a roots
@@ -175,33 +254,6 @@ exec zubak-mkt0job "$@"
 EOS
         chmod a+x targets/$t/bin/zubak-end
     fi
-}
-
-cmd_conf() {
-    targets=( $(targets "$@") )
-    (( $#targets == 1 )) || fatal 'no targets found'
-}
-
-# --- Functions
-
-note() {
-    if [[ -t 1 ]]; then
-        print -- "\e[35;1m$*\e[0m"
-    else
-        print -- "$*"
-    fi
-}
-
-run() {
-    note "$*"
-    $dryrun && print '  (dry run)' || "$@"
-}
-
-askbool() {
-    read -q "?$1 [yN] "
-    integer err=$?
-    [[ $REPLY == $'\n' ]] || print
-    return $err
 }
 
 find-on-tape() {
