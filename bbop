@@ -48,8 +48,12 @@ backup() {
         askbool 'OK to proceed?' || cancel
     fi
     for t in $targets; do
+        print "Back up $t" >&2
         run zubak up $zubakopts $t
     done
+    print 'Write jobs to tape' >&2
+    t0write -a
+    print 'Done' >&2
 }
 
 cmd_start() {
