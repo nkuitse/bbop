@@ -142,54 +142,54 @@ cmd_conf() {
 }
 
 cmd_queue() {
-    typeset opt mode=list
-    typeset -a qdirs
+    typeset opt mode=list q
+    typeset -a queues
     while getopts :alr0123456789 opt; do
         case $opt in
             (a) mode=add ;;
             (l) mode=list ;;
             (r) mode=run ;;
             ([0-9])
-                qdirs+=queue/$opt ;;
+                queues+=queue/$opt ;;
         esac
     done
     shift $(( OPTIND - 1 ))
     if [[ $mode == list ]]; then
-        (( $#qdirs )) || qdirs=( queue/[0-9](/N) )
-        (( $#qdirs )) || exit 0
-        find -H $qdirs -type f |
-        while IFS=/ read q prio uuid; do
-            print $prio $uuid $(cat $q/$prio/$uuid)
+        (( $#queues )) || queues=( queue/[0-9](.N) )
+        (( $#queues )) || exit 0
+        for q in $queues; do
+            print $q $(sort -u $q)
         done
     elif [[ $mode == add ]]; then
         if (( $# == 0 )); then
             usage
-        elif (( $#qdirs == 0 )); then
-            qdirs=( queue/5 )
-        elif (( $#qdirs > 1 )); then
+        elif (( $#queues == 0 )); then
+            q=queue/5
+        elif (( $#queues > 1 )); then
             usage
+        else
+            q=${queues[1]}
         fi
-        mkdir -p ${qdirs[1]}
-        print -l $(targets "$@") | tee ${qdirs[1]}/$(uuidgen)
+        print -l $(targets "$@") >> $q
     fi
 }
 
 cmd_run() {
-    typeset opt
-    typeset -a qdirs bbopargs
+    typeset opt q
+    typeset -a queues targets bbopargs
     while getopts :0123456789y opt; do
         case $opt in
             ([0-9])
-                qdirs+=queue/$opt ;;
+                queues+=queue/$opt ;;
             (y) bbopargs+=( -y ) ;;
             (*) usage ;;
         esac
     done
-    (( $#qdirs )) || qdirs=( queue/[0-9](/N) )
-    (( $#qdirs )) || exit 0
-    set -- $(find -H $qdirs -type f | xargs sort -u)
-    (( $# )) || exit 0
-    bbop $bbopargs "$@"
+    (( $#queues )) || queues=( queue/[0-9](.N) )
+    (( $#queues )) || exit 0
+    targets=( $(cat $queues) )
+    targets=( ${(u)targets} )
+    (( $#targets == 0 )) || bbop $bbopargs $targets
 }
 
 # --- Functions
