@@ -15,7 +15,7 @@ my $t = shift;
 my @targets = grep { $_ eq $t || m{^$t/} } all_targets();
 my @eum = map { glob("targets/$_/series/*/[0-9]*.eum") } @targets;
 fatal "Can't find any targets: $t" if !@eum;
-my %tsb2j;
+my %seg2tape;
 foreach my $f (@ARGV) {
     open my $fh, '-|', 'fgrep', $f, @eum or fatal "fgrep: $!";
     while (<$fh>) {
@@ -28,32 +28,42 @@ foreach my $f (@ARGV) {
             else {
                 next if $munged_path ne $f;
             }
-            # my $job = '-';
-            my $seg = '-';
+            my $segs = '-';
             if ($status eq '+' && $typechar =~ /[fl]/) {
                 $_ = <$fh>;
-                fatal "fgrep: no file locator" if !defined $_;
-                if (m{^(targets/\S+?/series/\d+/\d[^.]+)\.eum:\^(\d+) \@(\d+) \*(\d+)(?: \#\S+)? (.+)}) {
-                    fatal if $1 ne $base;
-                    my @seg = ($2);
-                    my $end = $3 + $4;
-                    (my $mp = $5) =~ s{^\.[^./]+\./}{/};
-                    fatal if $mp ne $munged_path;
-                    while ($end > SEGLEN) {
-                        push @seg, $seg[-1]+1;
-                        $end -= SEGLEN;
-                    }
-                    # $job = $tsb2j{"$target/$series/$backup"} ||= job($target, $series, $backup);
-                    $seg = join(',', @seg);
-                    # $stat =~ s/ \*(\d+)$//;
+                last if !defined $_;
+                next if !m{^(targets/\S+?/series/\d+/\d[^.]+)\.eum:\^(\d+) \@(\d+) \*(\d+)(?: \#\S+)? (.+)};
+                fatal if $1 ne $base;
+                my @segs = ($2);
+                my $end = $3 + $4;
+                (my $mp = $5) =~ s{^\.[^./]+\./}{/};
+                fatal if $mp ne $munged_path;
+                while ($end > SEGLEN) {
+                    push @segs, $segs[-1]+1;
+                    $end -= SEGLEN;
                 }
+                $segs = join(',', @segs);
             }
-            printf "%s %s %s %s %s%s%s %s\n", $target, $series, $backup, $seg, $status, $typechar, $stat, $path;
+            printf "%s %s %s %s %s%s%s %s\n", $target, $series, $backup, $segs, $status, $typechar, $stat, $path;
         }
     }
 }
 
 # --- Functions
+
+sub seg2tape {
+    my ($target, $series, $backup) = @_;
+    my $rcpt = sprintf("targets/%s/series/%d/%s.t0receipt", @_);
+    return if ! -e $rcpt;
+    my %s2t;
+    open my $fh, '<', $rcpt or fatal "open $rcpt: $!";
+    my ($tape, $filenum);
+    while (<$fh>) {
+        $tape = $1, $filenum = $2, next if /^T (\S+) filenum (\d+)/;
+        $s2t{$1}{$tape}{$filenum} = 1, next if /^B (\d+) begin/;
+    }
+    return \%s2t;
+}
 
 sub all_targets {
     open my $fh, '<', 'targets.list' or fatal "open targets.list: $!";
