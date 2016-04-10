@@ -158,7 +158,7 @@ cmd_queue() {
         (( $#queues )) || queues=( queue/[0-9](.N) )
         (( $#queues )) || exit 0
         for q in $queues; do
-            print $q $(sort -u $q)
+            sort -u $q | sed "s/^/$q:t /"
         done
     elif [[ $mode == add ]]; then
         if (( $# == 0 )); then
