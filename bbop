@@ -180,12 +180,12 @@ cmd_queue() {
 
 cmd_run() {
     typeset opt q
-    typeset -a queues targets bbopargs
+    typeset -a queues targets backupargs
     while getopts :0123456789y opt; do
         case $opt in
             ([0-9])
                 queues+=queue/$opt ;;
-            (y) bbopargs+=( -y ) ;;
+            (y) backupargs+=( -y ) ;;
             (*) usage ;;
         esac
     done
@@ -193,7 +193,7 @@ cmd_run() {
     (( $#queues )) || exit 0
     targets=( $(cat $queues) )
     targets=( ${(u)targets} )
-    (( $#targets == 0 )) || bbop $bbopargs $targets
+    (( $#targets == 0 )) || backup $backupargs $targets
 }
 
 # --- Functions
