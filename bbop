@@ -44,10 +44,10 @@ backup() {
     (( $#targets > 0 )) || fatal 'nothing to back up'
     if ! $yes && [[ -t 0 ]]; then
         print 'Targets selected for backup:' >&2
-        for t in $targets; do print "  * $t"; done >&2
+        for t in ${(u)targets}; do print "  * $t"; done >&2
         askbool 'OK to proceed?' || cancel
     fi
-    for t in $targets; do
+    for t in ${(u)targets}; do
         print "Back up $t" >&2
         run zubak up $zubakopts $t
     done
