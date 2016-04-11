@@ -35,18 +35,20 @@ foreach my $f (@ARGV) {
                 next if !m{^(targets/\S+?/series/\d+/\d[^.]+)\.eum:\^(\d+) \@(\d+) \*(\d+)(?: \#\S+)? (.+)};
                 fatal if $1 ne $base;
                 my @segs = ($2);
-                my $end = $3 + $4;
+                my ($bgn, $len, $end) = ($3, $4, $3 + $4);
                 (my $mp = $5) =~ s{^\.[^./]+\./}{/};
                 fatal if $mp ne $munged_path;
-                while ($end > SEGLEN) {
-                    push @segs, $segs[-1]+1;
-                    $end -= SEGLEN;
-                }
-                my $tnf = $tsb2tnf{"$target:$series:$backup"} ||= tsb2tnf($target, $series, $backup);
-                foreach my $seg (@segs) {
-                    ($tape, $fnum, $fname) = @{ $tnf->{$seg} || last };
-                    if (defined $tape) {
-                        print join(' ', $target, $series, $backup, $tape, $fnum, $fname, $status.$typechar, $stat, $path), "\n";
+                if ($len) {
+                    while ($end > SEGLEN) {
+                        push @segs, $segs[-1]+1;
+                        $end -= SEGLEN;
+                    }
+                    my $tnf = $tsb2tnf{"$target:$series:$backup"} ||= tsb2tnf($target, $series, $backup);
+                    foreach my $seg (@segs) {
+                        ($tape, $fnum, $fname) = @{ $tnf->{$seg} || last };
+                        if (defined $tape) {
+                            print join(' ', $target, $series, $backup, $tape, $fnum, $fname, $status.$typechar, $stat, $path), "\n";
+                        }
                     }
                 }
             }
