@@ -48,10 +48,10 @@ backup() {
         askbool 'OK to proceed?' || cancel
     fi
     for t in ${(u)targets}; do
-        print "Back up $t" >&2
+        $dryrun || print "Back up $t" >&2
         run zubak up $zubakopts $t
     done
-    print 'Write jobs to tape' >&2
+    $dryrun || print 'Write jobs to tape' >&2
     run t0write -a
     print 'Done' >&2
 }
