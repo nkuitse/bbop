@@ -144,13 +144,19 @@ cmd_conf() {
 cmd_queue() {
     typeset opt q
     typeset -a targets
-    while getopts :a:l opt; do
+    while getopts :a:lk opt; do
         case $opt in
             (a) (( $# )) || usage
                 print -l $(targets "$@") >> queue/$OPTARG
                 exit 0
                 ;;
             (l) ;;
+            (k) (( $# )) || usage
+                for q in $@:t; do
+                    [[ ! -s queue/$q ]] || : > queue/$q
+                done
+                exit 0
+                ;;
         esac
     done
     shift $(( OPTIND - 1 ))
