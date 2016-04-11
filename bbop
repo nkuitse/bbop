@@ -142,30 +142,40 @@ cmd_conf() {
 }
 
 cmd_queue() {
-    typeset opt q
-    typeset -a targets
-    while getopts :a:lk opt; do
+    typeset opt q mode=list
+    typeset -a targets queues
+    while getopts :vakl opt; do
         case $opt in
-            (a) (( $# )) || usage
-                print -l $(targets "$@") >> queue/$OPTARG
-                exit 0
-                ;;
+            (v) verbose=true ;;
+            (a) mode=add ;;
+            (k) mode=clear ;;
             (l) ;;
-            (k) (( $# )) || usage
-                for q in $@:t; do
-                    [[ ! -s queue/$q ]] || : > queue/$q
-                done
-                exit 0
-                ;;
         esac
     done
     shift $(( OPTIND - 1 ))
-    (( $# )) || set -- queue/*(.N) queue/*(@N)
-    (( $# )) || exit 0
-    for q in $@:t; do
-        [[ ! -s queue/$q ]] || targets+=( $(cat queue/$q) )
-    done
-    print -l ${(u)targets}
+    if [[ $mode == add ]]; then
+        (( $# > 1 )) || usage
+        q=$1; shift
+        print -l $(targets "$@") >> queue/$q
+    elif [[ $mode == clear ]]; then
+        (( $# )) || usage
+        for q in $@:t; do
+            [[ ! -s queue/$q ]] || : > queue/$q
+        done
+    else
+        (( $# )) || set -- queue/[0-9](.N) queue/[a-z]*(.N)
+        (( $# )) || exit 0
+        if $verbose; then
+            for q in $@:t; do
+                sort -u queue/$q | sed "s/^/$q /"
+            done
+        else
+            for q in $@:t; do
+                [[ ! -s queue/$q ]] || targets+=( $(cat queue/$q) )
+            done
+            print -l ${(u)targets}
+        fi
+    fi
 }
 
 cmd_run() {
@@ -338,7 +348,7 @@ backup-tapes() {
 }
 
 usage() {
-    print "usage: ${PROG:t} ${1:-'[-nvy] [-a|TARGET|CLIENT...'}" >&2
+    print "usage: ${PROG:t} ${1:-[-nvy] [-a|TARGET|CLIENT...]}" >&2
     exit 1
 }
 
