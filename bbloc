@@ -1,0 +1,43 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+my %tsb;
+while (<STDIN>) {
+    chomp;
+    next if !m{^(\S+) (\d+) (\S+) (\d+) ([+*#a-z]\S+(?: [+*#a-z]\S+)+) (.+)};
+    my ($target, $series, $backup, $segment, $stat, $path) = ($1, $2, $3, $4, $5, $6);
+    my @seg = ($segment);
+    my ($size) = m{[^*]+[*](\d+)};
+    $size -= 2<<26, push(@seg, $seg[-1] + 1) while $size > (2<<26);
+    my $tsb = $tsb{"$target:$series:$backup"} ||= tsb($target, $series, $backup);
+    my ($tape, $fnum, $file) = @{ $tsb->{$segment} || [] };
+    if (defined $tape) {
+        print join(' ', $tape, $fnum, $file, $stat, $path), "\n";
+    }
+    # trot/user 1 20160227T154813 358 +f c1456602970 g1501 m1456602970 p100644 r0 u1501 *3974 .trot./home/paul/calendar/home.rem
+}
+
+sub tsb {
+    my ($t, $s, $b) = @_;
+    open my $fh, '<', "targets/$t/series/$s/$b.t0receipt"
+        or die;
+    my %h;
+    while (<$fh>) {
+        next if !/^%log$/;
+        my ($tape, $fnum, $bnum);
+        while (<$fh>) {
+            if (/^T (\S+) .*filenum (\d+)/) {
+                ($tape, $fnum) = ($1, $2);
+            }
+            elsif (/^B (\d+) begin/) {
+                $bnum = $1;
+            }
+            elsif (/^F \d+ ([^\s.]+\.(\d+)\.gz)$/) {
+                $h{$2+0} = [ $tape, $fnum, $1 ];
+            }
+        }
+    }
+    return \%h;
+}
