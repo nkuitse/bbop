@@ -201,6 +201,10 @@ cmd_run() {
     fi
     targets=( $(cat $queues) )
     (( $#targets == 0 )) || run backup $backupargs ${(u)targets}
+    ### ! $dryrun || return 0
+    for q in $queues:t; do
+        [[ $q != [0-9] ]] || [[ ! -s queue/$q ]] || : > queue/$q
+    done
 }
 
 # --- Functions
