@@ -142,58 +142,49 @@ cmd_conf() {
 }
 
 cmd_queue() {
-    typeset opt mode=list q
-    typeset -a queues
-    while getopts :alr0123456789 opt; do
+    typeset opt q
+    typeset -a targets
+    while getopts :a:l opt; do
         case $opt in
-            (a) mode=add ;;
-            (l) mode=list ;;
-            (r) mode=clear ;;
-            ([0-9])
-                queues+=queue/$opt ;;
+            (a) (( $# )) || usage
+                print -l $(targets "$@") >> queue/$OPTARG
+                exit 0
+                ;;
+            (l) ;;
         esac
     done
     shift $(( OPTIND - 1 ))
-    if [[ $mode == list ]]; then
-        (( $#queues )) || queues=( queue/[0-9](.N) )
-        (( $#queues )) || exit 0
-        for q in $queues; do
-            sort -u $q | sed "s/^/$q:t /"
-        done
-    elif [[ $mode == add ]]; then
-        if (( $# == 0 )); then
-            usage
-        elif (( $#queues == 0 )); then
-            q=queue/5
-        elif (( $#queues > 1 )); then
-            usage
-        else
-            q=${queues[1]}
-        fi
-        print -l $(targets "$@") >> $q
-    elif [[ $mode == clear ]]; then
-        for q in queue/{0..9}; do
-            : > $q
-        done
-    fi
+    (( $# )) || set -- queue/*(.N) queue/*(@N)
+    (( $# )) || exit 0
+    for q in $@:t; do
+        [[ ! -s queue/$q ]] || targets+=( $(cat queue/$q) )
+    done
+    print -l ${(u)targets}
 }
 
 cmd_run() {
     typeset opt q
     typeset -a queues targets backupargs
-    while getopts :0123456789y opt; do
+    while getopts :nya opt; do
         case $opt in
-            ([0-9])
-                queues+=queue/$opt ;;
+            (n) backupargs+=( -n ) ;;
             (y) backupargs+=( -y ) ;;
+            (a) queues=( queue/[0-9](.N) queue/[a-z]*(.N) )
+                (( $#queues )) || exit 0
+                ;;
             (*) usage ;;
         esac
     done
-    (( $#queues )) || queues=( queue/[0-9](.N) )
-    (( $#queues )) || exit 0
+    shift $(( OPTIND - 1 ))
+    if (( $#queues == 0 )); then
+        (( $# )) || usage
+        for q in $@; do
+            [[ -e queue/$q ]] || fatal "no such queue: $q"
+            queues+=( queue/$q )
+        done
+    fi
     targets=( $(cat $queues) )
-    targets=( ${(u)targets} )
-    (( $#targets == 0 )) || backup $backupargs $targets
+    (( $#targets == 0 )) || run backup $backupargs ${(u)targets}
 }
 
 # --- Functions
