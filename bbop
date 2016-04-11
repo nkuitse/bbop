@@ -194,7 +194,7 @@ cmd_run() {
     shift $(( OPTIND - 1 ))
     if (( $#queues == 0 )); then
         (( $# )) || usage
-        for q in $@; do
+        for q in $@:t; do
             [[ -e queue/$q ]] || fatal "no such queue: $q"
             queues+=( queue/$q )
         done
