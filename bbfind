@@ -15,11 +15,11 @@ my $t = shift;
 my @targets = grep { $_ eq $t || m{^$t/} } all_targets();
 my @eum = map { glob("targets/$_/series/*/[0-9]*.eum") } @targets;
 fatal "Can't find any targets: $t" if !@eum;
-my %seg2tape;
+my %tsb2tnf;
 foreach my $f (@ARGV) {
     open my $fh, '-|', 'fgrep', $f, @eum or fatal "fgrep: $!";
     while (<$fh>) {
-        if (m{^(targets/(\S+?)/series/(\d+)/(\d[^.]+))\.eum:(.)(.)((?: [a-z*@#]\d+)+) (.+)}) {
+        if (m{^(targets/(\S+?)/series/(\d+)/(\d[^.]+))\.eum:(.)(.) ([a-z*@#]\d+(?: [a-z*@#]\d+)+) (.+)}) {
             my ($base, $target, $series, $backup, $status, $typechar, $stat, $path) = ($1, $2, $3, $4, $5, $6, $7, $8);
             (my $munged_path = $path) =~ s{^\.[^./]+\./}{/};
             if ($f =~ m{/$}) {
@@ -28,7 +28,7 @@ foreach my $f (@ARGV) {
             else {
                 next if $munged_path ne $f;
             }
-            my $segs = '-';
+            my ($tape, $fnum, $fname);
             if ($status eq '+' && $typechar =~ /[fl]/) {
                 $_ = <$fh>;
                 last if !defined $_;
@@ -42,27 +42,44 @@ foreach my $f (@ARGV) {
                     push @segs, $segs[-1]+1;
                     $end -= SEGLEN;
                 }
-                $segs = join(',', @segs);
+                my $tnf = $tsb2tnf{"$target:$series:$backup"} ||= tsb2tnf($target, $series, $backup);
+                foreach my $seg (@segs) {
+                    ($tape, $fnum, $fname) = @{ $tnf->{$seg} || last };
+                    if (defined $tape) {
+                        print join(' ', $target, $series, $backup, $tape, $fnum, $fname, $status.$typechar, $stat, $path), "\n";
+                    }
+                }
             }
-            printf "%s %s %s %s %s%s%s %s\n", $target, $series, $backup, $segs, $status, $typechar, $stat, $path;
+            if (!defined $tape) {
+                print join(' ', $target, $series, $backup, '-', '-', '-', $status.$typechar, $stat, $path), "\n";
+            }
         }
     }
 }
 
 # --- Functions
-
-sub seg2tape {
-    my ($target, $series, $backup) = @_;
-    my $rcpt = sprintf("targets/%s/series/%d/%s.t0receipt", @_);
-    return if ! -e $rcpt;
-    my %s2t;
-    open my $fh, '<', $rcpt or fatal "open $rcpt: $!";
-    my ($tape, $filenum);
+#
+sub tsb2tnf {
+    my ($t, $s, $b) = @_;
+    open my $fh, '<', "targets/$t/series/$s/$b.t0receipt"
+        or return {};
+    my %h;
     while (<$fh>) {
-        $tape = $1, $filenum = $2, next if /^T (\S+) filenum (\d+)/;
-        $s2t{$1}{$tape}{$filenum} = 1, next if /^B (\d+) begin/;
+        next if !/^%log$/;
+        my ($tape, $fnum, $bnum);
+        while (<$fh>) {
+            if (/^T (\S+) .*filenum (\d+)/) {
+                ($tape, $fnum) = ($1, $2);
+            }
+            elsif (/^B (\d+) begin/) {
+                $bnum = $1;
+            }
+            elsif (/^F \d+ ([^\s.]+\.(\d+)\.gz)$/) {
+                $h{$2+0} = [ $tape, $fnum, $1 ];
+            }
+        }
     }
-    return \%s2t;
+    return \%h;
 }
 
 sub all_targets {
