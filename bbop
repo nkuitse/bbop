@@ -145,12 +145,12 @@ cmd_queue() {
     typeset opt q mode=list mly wly dly
     typeset -a targets queues
     print -P '%D{m%d w%a d%H}' | tr A-Z a-z | read mly wly dly
-    while getopts :vaknl opt; do
+    while getopts :vaktl opt; do
         case $opt in
             (v) verbose=true ;;
             (a) mode=add ;;
             (k) mode=clear ;;
-            (n) mode=count ;;
+            (t) mode=tally ;;
             (l) ;;
         esac
     done
@@ -164,7 +164,7 @@ cmd_queue() {
         for q in $@:t; do
             [[ ! -s queue/$q ]] || : > queue/$q
         done
-    elif [[ $mode == count ]]; then
+    elif [[ $mode == tally ]]; then
         (( $# )) || set -- queue/[0-9](.N) queue/$mly(.N) queue/$wly(.N) queue/$dly(.N)
         if $verbose; then
             for q in $@:t; do
