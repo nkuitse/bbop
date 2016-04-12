@@ -144,11 +144,12 @@ cmd_conf() {
 cmd_queue() {
     typeset opt q mode=list
     typeset -a targets queues
-    while getopts :vakl opt; do
+    while getopts :vaknl opt; do
         case $opt in
             (v) verbose=true ;;
             (a) mode=add ;;
             (k) mode=clear ;;
+            (n) mode=count ;;
             (l) ;;
         esac
     done
@@ -162,6 +163,17 @@ cmd_queue() {
         for q in $@:t; do
             [[ ! -s queue/$q ]] || : > queue/$q
         done
+    elif [[ $mode == count ]]; then
+        typeset mly wly dly
+        print -P '%D{m%d w%a d%H}' | tr A-Z a-z | read mly wly dly
+        (( $# )) || set -- queue/[0-9](.N) queue/$mly(.N) queue/$wly(.N) queue/$dly(.N)
+        if $verbose; then
+            for q in $@; do
+                wc -l $q | sed s:queue/::
+            done
+        else
+            sort -u $@ | wc -l
+        fi
     else
         (( $# )) || set -- queue/[0-9](.N) queue/[a-z]*(.N)
         (( $# )) || exit 0
@@ -179,15 +191,19 @@ cmd_queue() {
 }
 
 cmd_run() {
-    typeset opt q
+    typeset opt q mly wly dly
     typeset -a queues targets backupargs
+    print -P '%D{m%d w%a d%H}' | tr A-Z a-z | read mly wly dly
     while getopts :nya opt; do
         case $opt in
             (n) backupargs+=( -n ) ;;
             (y) backupargs+=( -y ) ;;
-            (a) queues=( queue/[0-9](.N) queue/[a-z]*(.N) )
+            (a) queues=( queue/[0-9](.N) queue/$mly(.N) queue/$wly(.N) queue/$dly(.N) )
                 (( $#queues )) || exit 0
                 ;;
+            (m) queues+=( queue/$mly ) ;;
+            (w) queues+=( queue/$wly ) ;;
+            (d) queues+=( queue/$dly ) ;;
             (*) usage ;;
         esac
     done
@@ -201,13 +217,16 @@ cmd_run() {
     fi
     targets=( $(cat $queues) )
     (( $#targets == 0 )) || run backup $backupargs ${(u)targets}
-    ### ! $dryrun || return 0
     for q in $queues:t; do
-        [[ $q != [0-9] ]] || [[ ! -s queue/$q ]] || : > queue/$q
+        [[ $q != [0-9] ]] || isempty $q || : > queue/$q
     done
 }
 
 # --- Functions
+
+isempty() {
+    [[ ! -s $1 ]]
+}
 
 note() {
     if [[ -t 1 ]]; then
