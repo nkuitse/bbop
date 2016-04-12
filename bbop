@@ -142,23 +142,25 @@ cmd_conf() {
 }
 
 cmd_queue() {
-    typeset opt q mode=list mly wly dly
+    typeset opt q qheld list=true add=false clear=false prime=false hold=false tally=false dly wly mly
     typeset -a targets queues
-    print -P '%D{m%d w%a d%H}' | tr A-Z a-z | read mly wly dly
-    while getopts :vaktlmwd opt; do
+    print -P '%D{d%H w%a m%d}' | tr A-Z a-z | read dly wly mly
+    while getopts :vakphtldwm opt; do
         case $opt in
             (v) verbose=true ;;
-            (a) mode=add ;;
-            (k) mode=clear ;;
-            (t) mode=tally ;;
-            (l) ;;
-            (m) queues+=( $mly ) ;;
-            (w) queues+=( $wly ) ;;
+            (a) add=true ;;
+            (k) clear=true ;;
+            (p) prime=true ;;
+            (h) hold=true ;;
+            (t) tally=true ;;
+            (l) list=true ;;
             (d) queues+=( $dly ) ;;
+            (w) queues+=( $wly ) ;;
+            (m) queues+=( $mly ) ;;
         esac
     done
     shift $(( OPTIND - 1 ))
-    if [[ $mode == add ]]; then
+    if $add; then
         (( $#queues < 2 )) || usage
         (( $#queues == 0 )) || set $queues $@
         (( $# > 1 )) || usage
@@ -166,16 +168,52 @@ cmd_queue() {
         if [[ $q != [0-9] && $q != m[0-9][0-9] && $q != w[a-z][a-z][a-z] && $q != d[0-9][0-9] ]]; then
             print "bbqueue: warning: adding to a non-standard queue: $q" >&2
         fi
+        ! $hold || q=${q}+
         print -l $(targets "$@") >> queue/$q
-    elif [[ $mode == clear ]]; then
+    elif $clear; then
         set -- $queues $@
         (( $# )) || usage
         for q in $@:t; do
+            ! $hold || q=${q}+
             [[ ! -s queue/$q ]] || : > queue/$q
         done
-    elif [[ $mode == tally ]]; then
+    elif $hold; then
         set -- $queues $@
-        (( $# )) || set -- queue/[0-9](.N) queue/$mly(.N) queue/$wly(.N) queue/$dly(.N)
+        (( $# )) || set -- queue/$dly(.N) queue/$wly(.N) queue/$mly(.N)
+        (( $# )) || return 0
+        for q in $@:t; do
+            ! isempty queue/$q || continue 
+            qheld=${q}+
+            if [[ -e queue/$qheld ]]; then
+                cat queue/$q >> queue/$qheld
+                : > rm queue/$q
+            else
+                mv queue/$q queue/$qheld
+            fi
+        done
+    elif $prime; then
+        set -- $queues $@
+        (( $# )) || set -- queue/$dly+(.N) queue/$wly+(.N) queue/$mly+(.N)
+        (( $# )) || return 0
+        for q in $@:t; do
+            if [[ $q == *+ ]]; then
+                qheld=$q
+                q=${q[1,-2]}
+            else
+                qheld=${q}+
+            fi
+            if [[ -e queue/$q ]]; then
+                if [[ -e queue/$qheld ]]; then
+                    cat queue/$qheld >> queue/$q
+                    rm queue/$qheld
+                fi
+            else
+                mv queue/$qheld queue/$q
+            fi
+        done
+    elif $tally; then
+        set -- $queues $@
+        (( $# )) || set -- queue/[0-9](.N) queue/$dly(.N) queue/$wly(.N) queue/$mly(.N)
         if $verbose; then
             for q in $@:t; do
                 if [[ -e queue/$q ]]; then
@@ -191,7 +229,7 @@ cmd_queue() {
         fi
     else
         set -- $queues $@
-        (( $# )) || set -- queue/[0-9](.N) queue/$mly(.N) queue/$wly(.N) queue/$dly(.N)
+        (( $# )) || set -- queue/[0-9](.N) queue/$dly(.N) queue/$wly(.N) queue/$mly(.N)
         (( $# )) || exit 0
         if $verbose; then
             for q in $@:t; do
@@ -208,19 +246,19 @@ cmd_queue() {
 }
 
 cmd_run() {
-    typeset opt q mly wly dly
+    typeset opt q dly wly mly
     typeset -a queues targets backupargs
-    print -P '%D{m%d w%a d%H}' | tr A-Z a-z | read mly wly dly
-    while getopts :nya opt; do
+    print -P '%D{d%H w%a m%d}' | tr A-Z a-z | read dly wly mly
+    while getopts :nyadwm opt; do
         case $opt in
             (n) backupargs+=( -n ) ;;
             (y) backupargs+=( -y ) ;;
-            (a) queues=( queue/[0-9](.N) queue/$mly(.N) queue/$wly(.N) queue/$dly(.N) )
+            (a) queues=( queue/[0-9](.N) queue/$dly(.N) queue/$wly(.N) queue/$mly(.N) )
                 (( $#queues )) || exit 0
                 ;;
-            (m) queues+=( queue/$mly ) ;;
-            (w) queues+=( queue/$wly ) ;;
             (d) queues+=( queue/$dly ) ;;
+            (w) queues+=( queue/$wly ) ;;
+            (m) queues+=( queue/$mly ) ;;
             (*) usage ;;
         esac
     done
@@ -233,9 +271,20 @@ cmd_run() {
         done
     fi
     targets=( $(cat $queues) )
-    (( $#targets == 0 )) || run backup $backupargs ${(u)targets}
+    (( $#targets )) || return 0
+    for q in $queues; do
+        mv queue/$q queue/@$q
+    done
+    run backup $backupargs ${(u)targets}
     for q in $queues:t; do
-        [[ $q != [0-9] ]] || isempty $q || : > queue/$q
+        if [[ $q == [0-9] ]]; then
+            rm queue/@$q
+            : > queue/$q
+        elif [[ -e queue/$q+ ]]; then
+            rm queue/@$q
+        else
+            mv queue/@$q queue/$q+
+        fi
     done
 }
 
@@ -281,7 +330,7 @@ EOS
 
 make-zubak-begin() {
     typeset t=$1 host=$2
-    if [[ $h != $(hostname -s) && $h != $HOST:r ]]; then
+    if [[ $host != $(hostname -s) && $host != $HOST:r ]]; then
         print 'Create zubak-begin' >&2
         cat > targets/$t/bin/zubak-begin <<EOS
 #!/bin/zsh -e
@@ -295,7 +344,7 @@ EOS
 
 make-zubak-end() {
     typeset t=$1 host=$2
-    if [[ $h != $(hostname -s) && $h != $HOST:r ]]; then
+    if [[ $host != $(hostname -s) && $host != $HOST:r ]]; then
         print 'Create zubak-end' >&2
         cat > targets/$t/bin/zubak-end <<EOS
 #!/bin/zsh -e
