@@ -142,8 +142,9 @@ cmd_conf() {
 }
 
 cmd_queue() {
-    typeset opt q mode=list
+    typeset opt q mode=list mly wly dly
     typeset -a targets queues
+    print -P '%D{m%d w%a d%H}' | tr A-Z a-z | read mly wly dly
     while getopts :vaknl opt; do
         case $opt in
             (v) verbose=true ;;
@@ -164,8 +165,6 @@ cmd_queue() {
             [[ ! -s queue/$q ]] || : > queue/$q
         done
     elif [[ $mode == count ]]; then
-        typeset mly wly dly
-        print -P '%D{m%d w%a d%H}' | tr A-Z a-z | read mly wly dly
         (( $# )) || set -- queue/[0-9](.N) queue/$mly(.N) queue/$wly(.N) queue/$dly(.N)
         if $verbose; then
             for q in $@; do
@@ -175,7 +174,7 @@ cmd_queue() {
             sort -u $@ | wc -l
         fi
     else
-        (( $# )) || set -- queue/[0-9](.N) queue/[a-z]*(.N)
+        (( $# )) || set -- queue/[0-9](.N) queue/$mly(.N) queue/$wly(.N) queue/$dly(.N)
         (( $# )) || exit 0
         if $verbose; then
             for q in $@:t; do
