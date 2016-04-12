@@ -167,11 +167,17 @@ cmd_queue() {
     elif [[ $mode == count ]]; then
         (( $# )) || set -- queue/[0-9](.N) queue/$mly(.N) queue/$wly(.N) queue/$dly(.N)
         if $verbose; then
-            for q in $@; do
-                wc -l $q | sed s:queue/::
+            for q in $@:t; do
+                if [[ -e queue/$q ]]; then
+                    wc -l queue/$q
+                else
+                    print 0 $q
+                fi | sed s:queue/::
             done
         else
-            sort -u $@ | wc -l
+            for q in $@:t; do
+                [[ ! -e queue/$q ]] || cat queue/$q
+            done | sort -u | wc -l
         fi
     else
         (( $# )) || set -- queue/[0-9](.N) queue/$mly(.N) queue/$wly(.N) queue/$dly(.N)
