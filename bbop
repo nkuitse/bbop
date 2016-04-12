@@ -195,7 +195,7 @@ cmd_queue() {
         (( $# )) || exit 0
         if $verbose; then
             for q in $@:t; do
-                sort -u queue/$q | sed "s/^/$q /"
+                [[ ! -e queue/$q ]] || sort -u queue/$q | sed "s/^/$q /"
             done
         else
             for q in $@:t; do
