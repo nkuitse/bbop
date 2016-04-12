@@ -145,7 +145,7 @@ cmd_queue() {
     typeset opt q mode=list mly wly dly
     typeset -a targets queues
     print -P '%D{m%d w%a d%H}' | tr A-Z a-z | read mly wly dly
-    while getopts :vaktl opt; do
+    while getopts :vaktlmwd opt; do
         case $opt in
             (v) verbose=true ;;
             (a) mode=add ;;
