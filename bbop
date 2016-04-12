@@ -152,19 +152,29 @@ cmd_queue() {
             (k) mode=clear ;;
             (t) mode=tally ;;
             (l) ;;
+            (m) queues+=( $mly ) ;;
+            (w) queues+=( $wly ) ;;
+            (d) queues+=( $dly ) ;;
         esac
     done
     shift $(( OPTIND - 1 ))
     if [[ $mode == add ]]; then
+        (( $#queues < 2 )) || usage
+        (( $#queues == 0 )) || set $queues $@
         (( $# > 1 )) || usage
         q=$1; shift
+        if [[ $q != [0-9] && $q != m[0-9][0-9] && $q != w[a-z][a-z][a-z] && $q != d[0-9][0-9] ]]; then
+            print "bbqueue: warning: adding to a non-standard queue: $q" >&2
+        fi
         print -l $(targets "$@") >> queue/$q
     elif [[ $mode == clear ]]; then
+        set -- $queues $@
         (( $# )) || usage
         for q in $@:t; do
             [[ ! -s queue/$q ]] || : > queue/$q
         done
     elif [[ $mode == tally ]]; then
+        set -- $queues $@
         (( $# )) || set -- queue/[0-9](.N) queue/$mly(.N) queue/$wly(.N) queue/$dly(.N)
         if $verbose; then
             for q in $@:t; do
@@ -180,6 +190,7 @@ cmd_queue() {
             done | sort -u | wc -l
         fi
     else
+        set -- $queues $@
         (( $# )) || set -- queue/[0-9](.N) queue/$mly(.N) queue/$wly(.N) queue/$dly(.N)
         (( $# )) || exit 0
         if $verbose; then
@@ -190,7 +201,8 @@ cmd_queue() {
             for q in $@:t; do
                 [[ ! -s queue/$q ]] || targets+=( $(cat queue/$q) )
             done
-            print -l ${(u)targets}
+            targets=( ${(u)targets} )
+            (( $#targets == 0 )) || print -l ${(u)targets}
         fi
     fi
 }
