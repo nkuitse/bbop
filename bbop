@@ -142,16 +142,16 @@ cmd_conf() {
 }
 
 cmd_queue() {
-    typeset opt q qheld list=true add=false clear=false prime=false hold=false tally=false dly wly mly
+    typeset opt q qheld list=true add=false clear=false release=false hold=false tally=false dly wly mly
     typeset -a targets queues
     print -P '%D{d%H w%a m%d}' | tr A-Z a-z | read dly wly mly
-    while getopts :vakphtldwm opt; do
+    while getopts :vakhutldwm opt; do
         case $opt in
             (v) verbose=true ;;
             (a) add=true ;;
             (k) clear=true ;;
-            (p) prime=true ;;
             (h) hold=true ;;
+            (u) release=true ;;
             (t) tally=true ;;
             (l) list=true ;;
             (d) queues+=( $dly ) ;;
@@ -191,7 +191,7 @@ cmd_queue() {
                 mv queue/$q queue/$qheld
             fi
         done
-    elif $prime; then
+    elif $release; then
         set -- $queues $@
         (( $# )) || set -- queue/$dly+(.N) queue/$wly+(.N) queue/$mly+(.N)
         (( $# )) || return 0
