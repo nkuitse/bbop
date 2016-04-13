@@ -251,9 +251,9 @@ cmd_run() {
     print -P '%D{d%H w%a m%d}' | tr A-Z a-z | read dly wly mly
     while getopts :nyvadwm opt; do
         case $opt in
-            (n) backupargs+=( -n ) ;;
+            (n) dryrun=true; backupargs+=( -n ) ;;
             (y) backupargs+=( -y ) ;;
-            (v) verbose=true ;;
+            (v) verbose=true; backupargs+=( -v ) ;;
             (a) queues=( queue/[0-9](.N) queue/$dly(.N) queue/$wly(.N) queue/$mly(.N) )
                 (( $#queues )) || exit 0
                 ;;
@@ -274,11 +274,13 @@ cmd_run() {
     targets=( $(cat $queues) )
     (( $#targets )) || return 0
     for q in $queues:t; do
-        mv queue/$q queue/$q@
+        $dryrun || mv queue/$q queue/$q@
     done
     run backup $backupargs ${(u)targets}
     for q in $queues:t; do
-        if [[ $q == [0-9] ]]; then
+        if $dryrun; then
+            :
+        elif [[ $q == [0-9] ]]; then
             rm queue/$q@
             : > queue/$q
         elif [[ -e queue/$q+ ]]; then
