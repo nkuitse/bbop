@@ -39,6 +39,23 @@ foreach my $f (@ARGV) {
                 (my $mp = $5) =~ s{^\.[^./]+\./}{/};
                 fatal if $mp ne $munged_path;
                 if ($len) {
+                    my ($seg) = @segs;
+                    my $tnf = $tsb2tnf{"$target:$series:$backup"} ||= tsb2tnf($target, $series, $backup);
+                    do {
+                        ($tape, $fnum, $fname) = @{ $tnf->{$seg} || last };
+                        if (!defined $tape) {
+                            ($tape, $fnum, $fname) = qw(? ? ?);
+                        }
+                        my $len_in_seg = $len;
+                        $len_in_seg = SEGLEN - $bgn if $bgn + $len_in_seg > SEGLEN;
+                        print join(' ', $target, $series, $backup, $tape, $fnum, $fname, $bgn, $len_in_seg, $status.$typechar, $stat, $path), "\n";
+                        $seg++;
+                        $end -= SEGLEN;
+                        $len -= (SEGLEN - $bgn);
+                        $bgn = 0;
+                    } while ($end > 0);
+                }
+                if (0) {
                     while ($end > SEGLEN) {
                         push @segs, $segs[-1]+1;
                         $end -= SEGLEN;
@@ -47,7 +64,7 @@ foreach my $f (@ARGV) {
                     foreach my $seg (@segs) {
                         ($tape, $fnum, $fname) = @{ $tnf->{$seg} || last };
                         if (defined $tape) {
-                            print join(' ', $target, $series, $backup, $tape, $fnum, $fname, $status.$typechar, $stat, $path), "\n";
+                            print join(' ', $target, $series, $backup, $tape, $fnum, $fname, $bgn, $status.$typechar, $stat, $path), "\n";
                         }
                     }
                 }
