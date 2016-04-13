@@ -272,18 +272,17 @@ cmd_run() {
     fi
     targets=( $(cat $queues) )
     (( $#targets )) || return 0
-    for q in $queues; do
-        mv queue/$q queue/@$q
+    for q in $queues:t; do
+        mv queue/$q queue/$q@
     done
     run backup $backupargs ${(u)targets}
     for q in $queues:t; do
         if [[ $q == [0-9] ]]; then
-            rm queue/@$q
             : > queue/$q
         elif [[ -e queue/$q+ ]]; then
-            rm queue/@$q
+            rm queue/$q@
         else
-            mv queue/@$q queue/$q+
+            mv queue/$q@ queue/$q+
         fi
     done
 }
