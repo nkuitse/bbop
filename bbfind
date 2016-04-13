@@ -55,22 +55,9 @@ foreach my $f (@ARGV) {
                         $bgn = 0;
                     } while ($end > 0);
                 }
-                if (0) {
-                    while ($end > SEGLEN) {
-                        push @segs, $segs[-1]+1;
-                        $end -= SEGLEN;
-                    }
-                    my $tnf = $tsb2tnf{"$target:$series:$backup"} ||= tsb2tnf($target, $series, $backup);
-                    foreach my $seg (@segs) {
-                        ($tape, $fnum, $fname) = @{ $tnf->{$seg} || last };
-                        if (defined $tape) {
-                            print join(' ', $target, $series, $backup, $tape, $fnum, $fname, $bgn, $status.$typechar, $stat, $path), "\n";
-                        }
-                    }
-                }
             }
             if (!defined $tape) {
-                print join(' ', $target, $series, $backup, '-', '-', '-', $status.$typechar, $stat, $path), "\n";
+                print join(' ', $target, $series, $backup, '-', '-', '-', '-', $status.$typechar, $stat, $path), "\n";
             }
         }
     }
