@@ -207,7 +207,7 @@ cmd_queue() {
                     cat queue/$qheld >> queue/$q
                     rm queue/$qheld
                 fi
-            else
+            elif [[ -e queue/$qheld ]]; then
                 mv queue/$qheld queue/$q
             fi
         done
@@ -256,9 +256,9 @@ cmd_run() {
             (a) queues=( queue/[0-9](.N) queue/$dly(.N) queue/$wly(.N) queue/$mly(.N) )
                 (( $#queues )) || exit 0
                 ;;
-            (d) queues+=( queue/$dly ) ;;
-            (w) queues+=( queue/$wly ) ;;
-            (m) queues+=( queue/$mly ) ;;
+            (d) queues+=( queue/$dly(.N) ) ;;
+            (w) queues+=( queue/$wly(.N) ) ;;
+            (m) queues+=( queue/$mly(.N) ) ;;
             (*) usage ;;
         esac
     done
