@@ -157,6 +157,7 @@ cmd_queue() {
             (d) queues+=( $dly ) ;;
             (w) queues+=( $wly ) ;;
             (m) queues+=( $mly ) ;;
+            (*) usage ;;
         esac
     done
     shift $(( OPTIND - 1 ))
