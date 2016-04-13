@@ -249,10 +249,11 @@ cmd_run() {
     typeset opt q dly wly mly
     typeset -a queues targets backupargs
     print -P '%D{d%H w%a m%d}' | tr A-Z a-z | read dly wly mly
-    while getopts :nyadwm opt; do
+    while getopts :nyvadwm opt; do
         case $opt in
             (n) backupargs+=( -n ) ;;
             (y) backupargs+=( -y ) ;;
+            (v) verbose=true ;;
             (a) queues=( queue/[0-9](.N) queue/$dly(.N) queue/$wly(.N) queue/$mly(.N) )
                 (( $#queues )) || exit 0
                 ;;
@@ -278,6 +279,7 @@ cmd_run() {
     run backup $backupargs ${(u)targets}
     for q in $queues:t; do
         if [[ $q == [0-9] ]]; then
+            rm queue/$q@
             : > queue/$q
         elif [[ -e queue/$q+ ]]; then
             rm queue/$q@
@@ -302,8 +304,10 @@ note() {
 }
 
 run() {
-    note "$*"
-    $dryrun && print '  (dry run)'
+    if $verbose; then
+        note "$*"
+        $dryrun && print '  (dry run)'
+    fi
     $dryrun || "$@"
 }
 
