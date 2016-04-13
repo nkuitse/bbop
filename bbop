@@ -77,7 +77,7 @@ cmd_start() {
     fi
     targets=( $(targets $@) )
     $all || (( $#targets > 0 )) || fatal 'nothing to back up'
-    bbop -y $bbargs $targets > bbop.$$.log 2>&1 &
+    $PROG -y $bbargs $targets > bbop.$$.log 2>&1 &
 }
 
 cmd_last() {
@@ -444,7 +444,7 @@ backup-tapes() {
 }
 
 usage() {
-    print "usage: ${PROG:t} ${1:-[-nvy] [-a|SUBQUEUE...]}" >&2
+    print "usage: $NAME ${1:-[-nvy] [-a|SUBQUEUE...]}" >&2
     exit 1
 }
 
@@ -454,7 +454,7 @@ cancel() {
 }
 
 fatal() {
-    print ${PROG:t}: "$@" >&2
+    print ${NAME}: "$@" >&2
     exit 2
 }
 
