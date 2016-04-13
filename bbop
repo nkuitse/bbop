@@ -248,6 +248,8 @@ cmd_queue() {
 cmd_run() {
     typeset opt q dly wly mly
     typeset -a queues targets backupargs
+    queues=( queue/*@(.N) )
+    (( $#queues == 0 )) || fatal "the queue is running: $queues"
     print -P '%D{d%H w%a m%d}' | tr A-Z a-z | read dly wly mly
     while getopts :nyvadwm opt; do
         case $opt in
