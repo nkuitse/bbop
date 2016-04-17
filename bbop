@@ -125,9 +125,9 @@ cmd_new() {
             root=/$t:t
             [[ $host$root == $t ]] || usage TARGET
             ;;
+        (*) usage ;;
     esac
     typeset host=$( { print $HOST:r; hostname -s } | sort -u | fgrep -v . )
-    typeset t="${argv[-1]}"
     [[ ! -e targets/$t ]] || fatal "target already exists: $t"
     zubak nt "$@"
     [[ -e targets/$t ]] || fatal "target not created: $t"
