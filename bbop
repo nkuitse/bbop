@@ -129,7 +129,7 @@ cmd_new() {
     esac
     typeset host=$( { print $HOST:r; hostname -s } | sort -u | fgrep -v . )
     [[ ! -e targets/$t ]] || fatal "target already exists: $t"
-    zubak nt "$@"
+    zubak nt $t
     [[ -e targets/$t ]] || fatal "target not created: $t"
     [[ -e targets/$t/bin/zubak-begin ]] || make-zubak-begin $t $host
     [[ -e targets/$t/bin/zubak-end   ]] || make-zubak-end   $t $host
