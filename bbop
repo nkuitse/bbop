@@ -330,7 +330,7 @@ make-zubak-find() {
         (user) roots=( ${host}:/home ${host}:root ) ;;
         (*)    roots=( ${host}:/${root} ) ;;
     esac
-    cat > targest/$t/bin/zubak-find <<EOS
+    cat > targets/$t/bin/zubak-find <<EOS
 #!/bin/zsh -e
 find $roots ...
 EOS
