@@ -1,0 +1,44 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+my $root = $ENV{BBOP_ROOT} // '/var/local/backup';
+
+while (<STDIN>) {
+    chomp;
+    my ($target, $series, $backup, $tape, $tapefile, $filename, $offset, $length, $meta) = split / /, $_, 9;
+    my $stored = "$root/targets/$target/series/$series/$filename";
+    if (! -e $stored) {
+        print STDERR "First read tape file $tapefile from tape $tape\n";
+        exit 2;
+    }
+    print STDERR "\e[32;1m", $filename, "\e[0m\n";
+    open my $fh, '-|', 'gunzip', '-c', $stored or die "bbget: open $stored: $!";
+    my $buf;
+    while ($offset > 0) {
+        my $n = $offset < 32768 ? $offset : 32768;
+        $offset -= (sysread($fh, $buf, $n) || die "bbget: read $stored: $!");
+    }
+    while ($length > 0) {
+        my $n = $length < 32768 ? $length : 32768;
+        $length -= (sysread($fh, $buf, $n) || die "bbget: read $stored: $!");
+        print STDOUT $buf;
+    }
+}
+
+__END__
+#!/bin/zsh
+
+typeset root=${BBOP_ROOT:-/var/local/backup}
+
+while IFS=' ' read -A argv; do
+    typeset target=$1 series=$2 backup=$3 tape=$4 tapefile=$5 filename=$6 offset=$7 length=$8; shift 8
+    cd $root/targets/$target/series/$series
+    if [[ ! -e $filename ]]; then
+        print read tape file $tapefile from tape $tape
+    else
+        print file $filename is already on disk
+    fi
+    print read $length bytes from offset $offset in file $filename >&2
+done
