@@ -3,12 +3,18 @@
 use strict;
 use warnings;
 
+use Getopt::Std qw(getopts);
+
 use constant SEGLEN => 64*1024*1024;
 
 sub usage;
 sub fatal;
 
-chdir($ENV{'BB_ROOT'} ||= '/var/local/backup') or fatal "chdir $ENV{BB_ROOT}: $!";
+my %opt;
+
+getopts(':mr', \%opt) or usage;
+
+chdir($opt{'r'} ||= $ENV{'BB_ROOT'} ||= '/var/local/backup') or fatal "chdir $ENV{BB_ROOT}: $!";
 
 usage if @ARGV < 2;
 my $t = shift;
@@ -17,12 +23,17 @@ my @eum = map { glob("targets/$_/series/*/[0-9]*.eum") } @targets;
 fatal "Can't find any targets: $t" if !@eum;
 my %tsb2tnf;
 foreach my $f (@ARGV) {
-    open my $fh, '-|', 'fgrep', $f, @eum or fatal "fgrep: $!";
+    my $rx = $opt{m} ? qr/$f/ : undef;
+    my $cmd = $rx ? 'egrep' : 'fgrep';
+    open my $fh, '-|', $cmd, $f, @eum or fatal "fgrep: $!";
     while (<$fh>) {
         if (m{^(targets/(\S+?)/series/(\d+)/(\d[^.]+))\.eum:(.)(.) ([a-z*@#]\d+(?: [a-z*@#]\d+)+) (.+)}) {
             my ($base, $target, $series, $backup, $status, $typechar, $stat, $path) = ($1, $2, $3, $4, $5, $6, $7, $8);
             (my $munged_path = $path) =~ s{^\.[^./]+\./}{/};
-            if ($f =~ m{/$}) {
+            if (defined $rx) {
+                next if $munged_path !~ $rx;
+            }
+            elsif ($f =~ m{/$}) {
                 next if substr($munged_path, 0, length $f) ne $f;
             }
             else {
@@ -41,7 +52,7 @@ foreach my $f (@ARGV) {
                 if ($len) {
                     my ($seg) = @segs;
                     my $tnf = $tsb2tnf{"$target:$series:$backup"} ||= tsb2tnf($target, $series, $backup);
-                    do {
+                    while ($end > 0) {
                         ($tape, $fnum, $fname) = @{ $tnf->{$seg} || last };
                         if (!defined $tape) {
                             ($tape, $fnum, $fname) = qw(? ? ?);
@@ -53,7 +64,7 @@ foreach my $f (@ARGV) {
                         $end -= SEGLEN;
                         $len -= (SEGLEN - $bgn);
                         $bgn = 0;
-                    } while ($end > 0);
+                    }
                 }
             }
             if (!defined $tape) {
