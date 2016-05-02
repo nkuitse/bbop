@@ -68,7 +68,7 @@ foreach my $f (@ARGV) {
                 }
             }
             if (!defined $tape) {
-                print join(' ', $target, $series, $backup, '-', '-', '-', '-', $status.$typechar, $stat, $path), "\n";
+                print join(' ', $target, $series, $backup, '-', '-', '-', '-', '-', $status.$typechar, $stat, $path), "\n";
             }
         }
     }
