@@ -26,19 +26,3 @@ while (<STDIN>) {
         print STDOUT $buf;
     }
 }
-
-__END__
-#!/bin/zsh
-
-typeset root=${BBOP_ROOT:-/var/local/backup}
-
-while IFS=' ' read -A argv; do
-    typeset target=$1 series=$2 backup=$3 tape=$4 tapefile=$5 filename=$6 offset=$7 length=$8; shift 8
-    cd $root/targets/$target/series/$series
-    if [[ ! -e $filename ]]; then
-        print read tape file $tapefile from tape $tape
-    else
-        print file $filename is already on disk
-    fi
-    print read $length bytes from offset $offset in file $filename >&2
-done
