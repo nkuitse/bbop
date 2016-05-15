@@ -12,7 +12,7 @@ sub fatal;
 
 my %opt;
 
-getopts(':mr', \%opt) or usage;
+getopts(':amr', \%opt) or usage;
 
 chdir($opt{'r'} ||= $ENV{'BB_ROOT'} ||= '/var/local/backup') or fatal "chdir $ENV{BB_ROOT}: $!";
 
@@ -21,7 +21,7 @@ my $t = shift;
 my @targets = grep { $_ eq $t || m{^$t/} } all_targets();
 my @eum = map { glob("targets/$_/series/*/[0-9]*.eum") } @targets;
 fatal "Can't find any targets: $t" if !@eum;
-my %tsb2tnf;
+my (%tsb2tnf, %choice);
 foreach my $f (@ARGV) {
     my $rx = $opt{m} ? qr/$f/ : undef;
     my $cmd = $rx ? 'egrep' : 'fgrep';
@@ -59,7 +59,7 @@ foreach my $f (@ARGV) {
                         }
                         my $len_in_seg = $len;
                         $len_in_seg = SEGLEN - $bgn if $bgn + $len_in_seg > SEGLEN;
-                        print join(' ', $target, $series, $backup, $tape, $fnum, $fname, $bgn, $len_in_seg, $status.$typechar, $stat, $path), "\n";
+                        out($target, $series, $backup, $tape, $fnum, $fname, $bgn, $len_in_seg, $status.$typechar, $stat, $path);
                         $seg++;
                         $end -= SEGLEN;
                         $len -= (SEGLEN - $bgn);
@@ -68,14 +68,29 @@ foreach my $f (@ARGV) {
                 }
             }
             if (!defined $tape) {
-                print join(' ', $target, $series, $backup, '-', '-', '-', '-', '-', $status.$typechar, $stat, $path), "\n";
+                out($target, $series, $backup, qw(- - - - -), $status.$typechar, $stat, $path);
             }
         }
     }
 }
+if (!$opt{a}) {
+    my ($k) = sort { $b cmp $a } keys %choice;
+    print @{ $choice{$k} } if defined $k;
+}
 
 # --- Functions
-#
+
+sub out {
+    my $str = "@_\n";
+    if ($opt{a}) {
+        print $str;
+    }
+    else {
+        # WARNING: Pseudo-multidimensional array
+        push @{ $choice{join("\x01",@_[2,0,1])} ||= [] }, $str;
+    }
+}
+
 sub tsb2tnf {
     my ($t, $s, $b) = @_;
     open my $fh, '<', "targets/$t/series/$s/$b.t0receipt"
