@@ -49,7 +49,6 @@ backup() {
     fi
     for t in ${(u)targets}; do
         run zubak up $zubakopts $t
-        $dryrun || print "done $t" >&2
     done
     $dryrun || print 'Write jobs to tape' >&2
     run t0write -a
@@ -429,7 +428,7 @@ backup-size() {
 
 backup-duration() {
     typeset t=$1 s=$2 b=$3
-    sec2hm $(awk '/^begin / {b = $2} /^end / {e = $2} END {print e - b}' targets/$t/series/$s/$b.backup)
+    sec2approxdur $(awk '/^begin / {b = $2} /^end / {e = $2} END {print e - b}' targets/$t/series/$s/$b.backup)
 }
 
 backup-mode() {
@@ -448,23 +447,15 @@ backup-tapes() {
     [[ ! -e $rcpt ]] || perl -ne '$t{$1}++ if /^T (\S+)/; END { print $_, "\n" for sort keys %t }' $rcpt
 }
 
-sec2hm() {
+sec2approxdur() {
     integer s=$1
-    integer m h d w M
-    typeset -a dur
     if (( s > 3600 )); then
-        h=$(( s / 3600 ))
-        s=$(( s % 3600 ))
-        dur+=${h}h
+        print $(( (s+1800) / 3600 ))h
+    elif (( s > 60 )); then
+        print $(( (s+30) / 60 ))m
+    else
+        print ${s}s
     fi
-    if (( s > 60 )); then
-        m=$(( s / 60 ))
-        s=$(( s % 60 ))
-        dur+=${m}m
-    elif (( $#dur == 0 )); then
-        dur=( ${s}s )
-    fi
-    print $dur
 }
 
 usage() {
