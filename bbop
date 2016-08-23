@@ -79,52 +79,6 @@ cmd_start() {
     $PROG -y $bbargs $targets > bbop.$$.log 2>&1 &
 }
 
-cmd_last() {
-    typeset opt mode all=false terse=false
-    while getopts :afit opt; do
-        case $opt in
-            (a) all=true ;;
-            (f) mode=full ;;
-            (i) mode=incr ;;
-            (t) terse=true ;;
-            (*) usage ;;
-        esac
-    done
-    shift $(( OPTIND - 1 ))
-    targets=( $(targets "$@") )
-    $terse || printf '%-16s  %3s %4s %6s %6s %7s %s\n' Started Dur Mode Files Size 'Tape(s)' Target
-    typeset t b s bdur bsize bcount tapes
-    typeset -a batches
-    for t in $targets; do
-        if $all; then
-            set -- $(zubak ls $t)
-        else
-            set -- current
-        fi
-        for s in $@; do
-            batches=$(zubak lb $t $s)
-            for b in $=batches; do
-                bmode=$(backup-mode $t $s $b)
-                if [[ -z $mode || $bmode == $mode ]]; then
-                    parse-date $b | read y m d H M S
-                    bdur=$(backup-duration $t $s $b)
-                    bsize=$(backup-size $t $s $b)
-                    bcount=$(backup-count $t $s $b)
-                    tapes="$(backup-tapes $t $s $b)"
-                    if $terse; then
-                        bsec=$(date -d "$y-$m-$d $H:$M:$S" +%s)
-                        bdur=$(backup-duration-raw $t $s $b)
-                        print "$bsec $(( bsec + bdur )) $bmode $bcount $bsize ${tapes:-} $t"
-                    else
-                        printf '%04d-%02d-%02d %02d:%02d  %3s %4s %6.6s %6.6s %7s %s\n' $y $m $d $H $M $bdur $bmode $bcount $bsize "$tapes" $t
-                    fi
-                    $all || break
-                fi
-            done
-        done
-    done | sort
-}
-
 cmd_new() {
     typeset opt host root
     (( $# == 1 )) || usage TARGET

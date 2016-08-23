@@ -13,8 +13,7 @@ sub fatal;
 my $root = '/var/local/backup';
 my $now = time;
 
-my ($current, $full, $on_tape, $all, $verbose);
-my ($period, $maxnum);
+my ($current, $full, $on_tape, $on_this_tape, $all, $verbose, $period, $check, $maxnum);
 
 my %u2s = qw(
     y   31557600
@@ -38,9 +37,12 @@ GetOptions(
     'c|current' => \$current,
     'f|full' => \$full,
     't|on-tape' => \$on_tape,
+    'T|on-this-tape=s' => sub { $on_tape = 1; $on_this_tape = $_[1] },
     'a|all' => \$all,
     'v|verbose' => \$verbose,
     'p|period=s' => \$period,
+    'k|check' => \$check,
+    'n|count=i' => \$maxnum,
 ) or usage;
 $maxnum = shift if @ARGV && $ARGV[0] =~ /^[1-9][0-9]*$/;
 
@@ -48,7 +50,7 @@ my $recent = $period ? period2sub($period) : undef;
 
 chdir $root or fatal "chdir $root: $!";
 
-my @backups;
+my (@backups, %lacking);
 my @targets = identify_targets(@ARGV);
 foreach my $t (@targets) {
     my @tb;
@@ -56,11 +58,23 @@ foreach my $t (@targets) {
     foreach my $s (@series) {
         push @tb, identify_backups($t, $s);
     }
-    splice @tb, $maxnum if defined $maxnum;
-    push @backups, @tb;
+    if (@tb) {
+        splice @tb, $maxnum if defined $maxnum;
+        push @backups, @tb;
+    }
+    elsif ($check) {
+        $lacking{$t} = 1;
+    }
 }
 
-if (@backups) {
+if ($check) {
+    exit 0 if !keys %lacking;
+    if ($verbose) {
+        print "no recent backup: $_\n" for sort keys %lacking;
+    }
+    exit 2;
+}
+elsif (@backups) {
     my @hdr = qw{Started Dur Mode Size Err Tapes Target};
     foreach (sort { $b->{'begin'} <=> $a->{'begin'} } @backups) {
         print_backup_info($_, @hdr);
@@ -86,7 +100,7 @@ sub identify_targets {
 sub identify_series {
     my ($t) = @_;
     return readlink("targets/$t/series/current") if $current;
-    return readfile("targets/$t/series.list");
+    return reverse readfile("targets/$t/series.list");
 }
 
 sub identify_backups {
@@ -114,6 +128,21 @@ sub identify_backups {
             $backup{$backup}{'end'} = $time;
         }
     }
+    foreach my $b (keys %backup) {
+        my $sdir = "targets/$t/series/$s";
+        my $rcpt = "$sdir/$b.t0receipt";
+        my $backup = $backup{$b};
+        my ($err, $size, @tapes);
+        if (-e $rcpt) {
+            ($err, $size, @tapes) = parse_receipt($rcpt);
+            $backup->{'errors'} = $err,
+            $backup->{'size'} = num2hum($size);
+            $backup->{'tapes'} = join(',', @tapes) if @tapes;
+        }
+        delete $backup{$b}
+            if $on_tape && !@tapes
+            || $on_this_tape && !grep { $_ eq $on_this_tape } @tapes;
+    }
     return sort { $b->{'begin'} <=> $a->{'begin'} } values %backup;
 }
 
@@ -133,28 +162,21 @@ sub parse_receipt {
 sub print_backup_info {
     my $backup = shift;
     my ($t, $s, $b, $m, $t0, $tn) = @$backup{qw(target series backup mode begin end)};
-    my $dur = defined($tn) ? sec2dur($tn - $t0) . ' ' : sec2dur($now - $t0) . '*';
-    my $sdir = "targets/$t/series/$s";
-    my $tape;
-    my $size = '??';
-    my $err = 0;
-    if (-e "$sdir/$b.t0receipt") {
-        my @tapes;
-        ($err, $size, @tapes) = parse_receipt("$sdir/$b.t0receipt");
-        $size = num2hum($size);
-        $tape = join(',', @tapes) if @tapes;
-    }
+    my $tapes = $backup->{'tapes'};
+    my $size = $backup->{'size'} // '??';
+    my $err = $backup->{'err'} || 0;
     my $ymdhms = strftime('%Y-%m-%d %H:%M:%S', localtime $t0);
+    my $dur = defined($tn) ? sec2dur($tn - $t0) . ' ' : sec2dur($now - $t0) . '*';
     my ($pfx, $sfx) = ('', '');
     if (-t STDOUT) {
-        $pfx = $err ? "\e[31;1m" : !defined($tape) ? "\e[33;1m" : '';
+        $pfx = $err ? "\e[31;1m" : !defined($tapes) ? "\e[33;1m" : '';
         $sfx = "\e[0m";
     }
-    $tape //= '--';
+    $tapes //= '--';
     printf "%-19.19s  %5.5s   %4.4s  %5.5s  %3.3s  %5.5s  %s\n",
         @_ if @_;
     printf "%s  %6.6s  %4.4s  %5.5s %s %3d  %5.5s %s %s\n",
-        $ymdhms, $dur, $m, $size, $pfx, $err, $tape, $sfx, $t;
+        $ymdhms, $dur, $m, $size, $pfx, $err, $tapes, $sfx, $t;
 }
 
 sub readfile {
