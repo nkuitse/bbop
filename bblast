@@ -1,1 +1,220 @@
-bbop
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use POSIX qw(strftime);
+use Getopt::Long
+    qw(:config posix_default gnu_compat require_order bundling no_ignore_case);
+
+sub usage;
+sub fatal;
+
+my $root = '/var/local/backup';
+my $now = time;
+
+my ($current, $full, $on_tape, $all, $verbose);
+my ($period, $maxnum);
+
+my %u2s = qw(
+    y   31557600
+    w     604800
+    d      86400
+    h       3600
+    m         60
+    s          1
+);
+my %mul = qw(
+    K 1024.0
+    M 1048576.0
+    G 1073741824.0
+    T 1099511627776.0
+    P 1125899906842624.0
+    E 1152921504606846976.0
+);
+my $rxunit = qr/[KMGTPE]i?/;
+
+GetOptions(
+    'c|current' => \$current,
+    'f|full' => \$full,
+    't|on-tape' => \$on_tape,
+    'a|all' => \$all,
+    'v|verbose' => \$verbose,
+    'p|period=s' => \$period,
+) or usage;
+$maxnum = shift if @ARGV && $ARGV[0] =~ /^[1-9][0-9]*$/;
+
+my $recent = $period ? period2sub($period) : undef;
+
+chdir $root or fatal "chdir $root: $!";
+
+my @backups;
+my @targets = identify_targets(@ARGV);
+foreach my $t (@targets) {
+    my @tb;
+    my @series = identify_series($t);
+    foreach my $s (@series) {
+        push @tb, identify_backups($t, $s);
+    }
+    splice @tb, $maxnum if defined $maxnum;
+    push @backups, @tb;
+}
+
+if (@backups) {
+    my @hdr = qw{Started Dur Mode Size Err Tapes Target};
+    foreach (sort { $b->{'begin'} <=> $a->{'begin'} } @backups) {
+        print_backup_info($_, @hdr);
+        @hdr = ();
+    }
+}
+
+# --- Functions
+
+sub identify_targets {
+    my %want = map { $_ => 1 } @_;
+    my %t = map {
+        if (!%want || $want{$_}) {
+            ($_ => 1)
+        }
+        elsif (m{^(.+)/(.+)}) {
+            ($want{$_} || $want{$1}) ? ($_ => 1) : ()
+        }
+    } readfile('targets.list');
+    return sort keys %t;
+}
+
+sub identify_series {
+    my ($t) = @_;
+    return readlink("targets/$t/series/current") if $current;
+    return readfile("targets/$t/series.list");
+}
+
+sub identify_backups {
+    my ($t, $s) = @_;
+    my @log = readfile("targets/$t/series/series.log");
+    my %backup;
+    foreach (@log) {
+        # 1471665907 series 4 backup 20160820T000507 mode full begin
+        next if !/^([0-9]+) series ([0-9]+) backup (\S+) mode (\S+) (begin|end)$/;
+        my ($time, $series, $backup, $mode, $action) = ($1, $2, $3, $4, $5);
+        next if $series ne $s;
+        next if $full && $mode ne 'full';
+        chomp;
+        if ($action eq 'begin') {
+            next if $recent && !$recent->($time);
+            $backup{$backup} = {
+                'target' => $t,
+                'series' => $s,
+                'backup' => $backup,
+                'mode' => $mode,
+                'begin' => $time,
+            };
+        }
+        elsif (exists $backup{$backup}) {
+            $backup{$backup}{'end'} = $time;
+        }
+    }
+    return sort { $b->{'begin'} <=> $a->{'begin'} } values %backup;
+}
+
+sub parse_receipt {
+    my ($rcpt) = @_;
+    my %tape;
+    my $size = 0.0;
+    my $err = 0;
+    foreach (readfile($rcpt)) {
+        $tape{$1} = 1, next if /^T (\S+)/;
+        $size += $1, next if /^[0-9]+ count [0-9]+ size ([0-9]+)/;
+        $err += $1, next if /errors ([0-9]+)/;
+    }
+    return $err, $size, sort keys %tape;
+}
+
+sub print_backup_info {
+    my $backup = shift;
+    my ($t, $s, $b, $m, $t0, $tn) = @$backup{qw(target series backup mode begin end)};
+    my $dur = defined($tn) ? sec2dur($tn - $t0) . ' ' : sec2dur($now - $t0) . '*';
+    my $sdir = "targets/$t/series/$s";
+    my $tape;
+    my $size = '??';
+    my $err = 0;
+    if (-e "$sdir/$b.t0receipt") {
+        my @tapes;
+        ($err, $size, @tapes) = parse_receipt("$sdir/$b.t0receipt");
+        $size = num2hum($size);
+        $tape = join(',', @tapes) if @tapes;
+    }
+    my $ymdhms = strftime('%Y-%m-%d %H:%M:%S', localtime $t0);
+    my ($pfx, $sfx) = ('', '');
+    if (-t STDOUT) {
+        $pfx = $err ? "\e[31;1m" : !defined($tape) ? "\e[33;1m" : '';
+        $sfx = "\e[0m";
+    }
+    $tape //= '--';
+    printf "%-19.19s  %5.5s   %4.4s  %5.5s  %3.3s  %5.5s  %s\n",
+        @_ if @_;
+    printf "%s  %6.6s  %4.4s  %5.5s %s %3d  %5.5s %s %s\n",
+        $ymdhms, $dur, $m, $size, $pfx, $err, $tape, $sfx, $t;
+}
+
+sub readfile {
+    my ($f) = @_;
+    open my $fh, '<', $f or fatal "open $f: $!";
+    my @out = <$fh>;
+    chomp @out;
+    return @out;
+}
+
+sub period2sub {
+    my ($p) = @_;
+    return sub { 1 } if !defined $p;
+    usage if $p !~ /^([0-9]+[wdhms])+/;
+    my $s = dur2sec($p);
+    return sub { $now - shift() <= $s }
+}
+
+sub num2hum {
+    local $_ = shift;
+    s/(\d+(?:\.\d+)?)/unitize($1)/e;
+    return $_;
+}
+
+sub unitize {
+    my ($n) = @_;
+    foreach my $u (qw(E P T G M K)) {
+        return sprintf('%d', $n/$mul{$u}).$u if $n > $mul{$u};
+    }
+    return $n;
+}
+sub dur2sec {
+    my ($p) = @_;
+    my $s = 0;
+    while ($p =~ s/^(\d+)([ywdhms])//) {
+        $s += $1 * $u2s{$2};
+    }
+    return $s;
+}
+
+sub sec2dur {
+    my ($t) = @_;
+    return $t . 's' if $t < 60;
+    $t = int($t / 60);
+    return $t . 'm' if $t < 60;
+    $t = int($t / 60);
+    return $t . 'h' if $t < 24;
+    $t = int($t / 24);
+    return $t . 'd' if $t < 60;
+    $t = int($t /  7);
+    return $t . 'w';
+}
+
+sub usage {
+    print STDERR "usage: bblast [-ftav] [-p PERIOD] [COUNT] [TARGET...]\n";
+    exit 1;
+}
+
+sub fatal {
+    print STDERR "bblast: ", @_, "\n";
+    exit 1;
+}
+
