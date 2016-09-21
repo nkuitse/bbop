@@ -1,7 +1,7 @@
 #!/bin/zsh -e
 
 typeset PROG=$0
-typeset NAME=$0:t
+typeset NAME=${PROG:t}
 typeset -a targets
 typeset dryrun=false verbose=false
 
@@ -255,6 +255,66 @@ cmd_run() {
         else
             mv queue/$q@ queue/$q+
         fi
+    done
+}
+
+cmd_prune() {
+    typeset opt tlastfull isfull
+    integer size total
+    typeset -a tbackups prune
+    typeset -A tsize
+    while getopts :nvyal opt; do
+        case $opt in
+            (n) dryrun=true ;;
+            (v) verbose=true ;;
+            (*) usage ;;
+        esac
+    done
+    shift $(( OPTIND - 1 ))
+    targets=( $(targets $@) )
+    for t in ${(u)targets}; do
+        #print "TARGET $t" >&2
+        tbackups=()
+        tlastfull=':'
+        for s in $(zubak ls $t); do
+            #print "  SERIES $s" >&2
+            set -- $(zubak lb $t $s)
+            (( # )) || continue
+            tlastfull=${s}:${1}
+            tbackups+=( $s $1 true )
+            #print "    BACKUP $1 full" >&2
+            shift
+            for b in $@; do
+                #print "    BACKUP $b incr" >&2
+                tbackups+=( $s $b false )
+            done
+        done
+        for s b isfull in $tbackups; do
+            set -- targets/$t/series/$s/$b.[0-9]*(N)
+            if [[ ${s}:${b} == $tlastfull ]]; then
+                du -bc $@ | tail -n1 | read size total
+                prune+=( $t $s $b $isfull -$size )
+                break
+            else
+                (( $# )) || continue
+                du -bc $@ | tail -n1 | read size total
+                prune+=( $t $s $b $isfull $size )
+                (( tsize[$t] += size ))
+            fi
+        done
+    done
+    for t s b isfull size in $prune; do
+        $verbose || (( size <= 0 )) || continue
+        if (( size <= 0 )); then
+            printf '%6s %s %s %s\n' '(keep)' $t $s $b
+        else
+            printf '%6s %s %s %s\n' $(num2hum <<<$size) $t $s $b
+        fi
+    done
+    print 'Target totals to prune:'
+    for t in $targets; do
+        size=${tsize[$t]}
+        printf '%6s %s\n' $(num2hum <<<${size:-0}) $t
     done
 }
 
