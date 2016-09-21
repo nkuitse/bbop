@@ -259,14 +259,13 @@ cmd_run() {
 }
 
 cmd_inv() {
-    typeset opt hum=false tlastfull mode tape size total
+    typeset opt tlastfull mode tape size total
     typeset -a tbackups backups
     typeset -A tsize
     while getopts :nvh opt; do
         case $opt in
             (n) dryrun=true ;;
             (v) verbose=true ;;
-            (h) hum=true ;;
             (*) usage ;;
         esac
     done
@@ -299,15 +298,11 @@ cmd_inv() {
             else
                 tape=-
             fi
-            backups+=( $action $size $t $s $b $mode $tape )
+            backups+=( $action $size $t $s $b $mode ${tape:--} )
         done
     done
     for action size t s b mode tape in $backups; do
-        if $hum; then
-            print $action $(num2hum <<<$size) $t $s $b $mode ${tape:--}
-        else
-            print $action $size $t $s $b $mode ${tape:--}
-        fi
+        print $action $size $t $s $b $mode $tape
     done
 }
 
