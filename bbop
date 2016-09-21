@@ -258,63 +258,56 @@ cmd_run() {
     done
 }
 
-cmd_prune() {
-    typeset opt tlastfull isfull
-    integer size total
-    typeset -a tbackups prune
+cmd_inv() {
+    typeset opt hum=false tlastfull mode tape size total
+    typeset -a tbackups backups
     typeset -A tsize
-    while getopts :nvyal opt; do
+    while getopts :nvh opt; do
         case $opt in
             (n) dryrun=true ;;
             (v) verbose=true ;;
+            (h) hum=true ;;
             (*) usage ;;
         esac
     done
     shift $(( OPTIND - 1 ))
     targets=( $(targets $@) )
     for t in ${(u)targets}; do
-        #print "TARGET $t" >&2
         tbackups=()
         tlastfull=':'
         for s in $(zubak ls $t); do
-            #print "  SERIES $s" >&2
             set -- $(zubak lb $t $s)
             (( # )) || continue
             tlastfull=${s}:${1}
-            tbackups+=( $s $1 true )
-            #print "    BACKUP $1 full" >&2
+            tbackups+=( $s $1 full )
             shift
             for b in $@; do
-                #print "    BACKUP $b incr" >&2
-                tbackups+=( $s $b false )
+                tbackups+=( $s $b incr )
             done
         done
-        for s b isfull in $tbackups; do
+        typeset action=P
+        for s b mode in $tbackups; do
             set -- targets/$t/series/$s/$b.[0-9]*(N)
             if [[ ${s}:${b} == $tlastfull ]]; then
-                du -bc $@ | tail -n1 | read size total
-                prune+=( $t $s $b $isfull -$size )
-                break
-            else
-                (( $# )) || continue
-                du -bc $@ | tail -n1 | read size total
-                prune+=( $t $s $b $isfull $size )
-                (( tsize[$t] += size ))
+                action=K
+            elif (( ! $# )); then
+                continue
             fi
+            if backup-tape $t $s $b | read tape; then
+                du -bc $@ | tail -n1 | read size total
+                (( tsize[$t] += size ))
+            else
+                tape=-
+            fi
+            backups+=( $action $size $t $s $b $mode $tape )
         done
     done
-    for t s b isfull size in $prune; do
-        $verbose || (( size <= 0 )) || continue
-        if (( size <= 0 )); then
-            printf '%6s %s %s %s\n' '(keep)' $t $s $b
+    for action size t s b mode tape in $backups; do
+        if $hum; then
+            print $action $(num2hum <<<$size) $t $s $b $mode ${tape:--}
         else
-            printf '%6s %s %s %s\n' $(num2hum <<<$size) $t $s $b
+            print $action $size $t $s $b $mode ${tape:--}
         fi
-    done
-    print 'Target totals to prune:'
-    for t in $targets; do
-        size=${tsize[$t]}
-        printf '%6s %s\n' $(num2hum <<<${size:-0}) $t
     done
 }
 
@@ -472,10 +465,10 @@ backup-count() {
     grep -c '^+' targets/$t/series/$s/$b.eum | num2hum
 }
 
-backup-tapes() {
+backup-tape() {
     typeset t=$1 s=$2 b=$3
     typeset rcpt=targets/$t/series/$s/$b.t0receipt
-    [[ ! -e $rcpt ]] || perl -ne '$t{$1}++ if /^T (\S+)/; END { print $_, "\n" for sort keys %t }' $rcpt
+    [[ ! -e $rcpt ]] || awk '/^T / {print $2; exit}' $rcpt
 }
 
 sec2approxdur() {
