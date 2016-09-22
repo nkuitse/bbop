@@ -1,0 +1,77 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use POSIX qw(strftime);
+use Getopt::Long
+    qw(:config posix_default gnu_compat require_order bundling no_ignore_case);
+
+sub usage;
+sub fatal;
+
+my $root = '/var/local/backup';
+my @now = localtime;
+my $today = today();
+my $tomorrow = tomorrow();
+my %want = map { $_ => 1 } @ARGV;
+my @schedule;
+
+chdir "$root/queue" or fatal "chdir $root: $!";
+
+my @queues = <*>;
+
+foreach my $queue (@queues) {
+    next if !-f $queue;
+    my @targets = read_queue($queue);
+    if ($queue =~ /^d(\d\d)(\+?)$/)  {
+        my $time;
+        if (length $2 || $1 > $now[2]) {
+            $time = $tomorrow + $1 * 3600;
+        }
+        else {
+            $time = $today + $1 * 3600;
+        }
+        push @schedule, [ $time, $_ ] for @targets;
+    }
+    elsif ($queue eq '0') {
+        push @schedule, [ 0, $_ ] for @targets;
+    }
+}
+
+my %t;
+foreach (sort { $a->[0] <=> $b->[0] } @schedule) {
+    my ($time, $target) = @$_;
+    print $t{$time} ||= strftime("%Y-%m-%d %H:%M", localtime($time)), ' ', $target, "\n";
+}
+
+sub read_queue {
+    my ($f) = @_;
+    open my $fh, '<', $f or fatal "open $f: $!";
+    my @targets = <$fh>;
+    chomp @targets;
+    return @targets;
+}
+
+sub today {
+    my @t = @now;
+    @t[0,1,2] = (0, 0, 0);
+    return strftime('%s', @t);
+}
+
+sub tomorrow {
+    my @t = @now;
+    @t[0,1,2] = (0, 0, 0);
+    return strftime('%s', @t) + 86400;
+}
+
+sub usage {
+    print STDERR "usage: bbnext [TARGET...]\n";
+    exit 1;
+}
+
+sub fatal {
+    print STDERR "bbnext ", @_, "\n";
+    exit 1;
+}
+
