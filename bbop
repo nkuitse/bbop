@@ -259,13 +259,15 @@ cmd_run() {
 }
 
 cmd_inv() {
-    typeset opt tlastfull mode tape size total
+    typeset opt want tlastfull mode tape size total
     typeset -a tbackups backups
     typeset -A tsize
-    while getopts :nvh opt; do
+    while getopts :nvpk opt; do
         case $opt in
             (n) dryrun=true ;;
             (v) verbose=true ;;
+            (p) want=P ;;
+            (k) want=K ;;
             (*) usage ;;
         esac
     done
@@ -289,20 +291,21 @@ cmd_inv() {
             set -- targets/$t/series/$s/$b.[0-9]*(N)
             if [[ ${s}:${b} == $tlastfull ]]; then
                 action=K
+                [[ -z $want || $want == K ]] || continue
             elif (( ! $# )); then
                 continue
             fi
+            du -bc $@ | tail -n1 | read size total
             if backup-tape $t $s $b | read tape; then
-                du -bc $@ | tail -n1 | read size total
                 (( tsize[$t] += size ))
             else
                 tape=-
             fi
-            backups+=( $action $size $t $s $b $mode ${tape:--} )
+            backups+=( $action $size $t $s $b $mode $tape )
         done
     done
     for action size t s b mode tape in $backups; do
-        print $action $size $t $s $b $mode $tape
+        [[ -n $want && $want != $action ]] || print $action $size $t $s $b $mode $tape
     done
 }
 
