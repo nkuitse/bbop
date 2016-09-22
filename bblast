@@ -13,7 +13,8 @@ sub fatal;
 my $root = '/var/local/backup';
 my $now = time;
 
-my ($current, $full, $on_tape, $on_this_tape, $all, $verbose, $period, $check, $maxnum);
+my ($current, $full, $on_tape, $on_this_tape, $all, $verbose, $period, $check);
+my $maxnum = 1;
 
 my %u2s = qw(
     y   31557600
