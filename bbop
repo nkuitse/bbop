@@ -56,13 +56,14 @@ backup() {
 }
 
 cmd_start() {
-    typeset opt all=false
+    typeset opt yes=false all=false
     typeset -a bbargs
-    while getopts :vya opt; do
+    while getopts :vyal opt; do
         case $opt in
             (v) bbargs+=( -v ) ;;
             (y) yes=true ;;
             (a) all=true; bbargs+=( -a ) ;;
+            (l) bbargs+=( -l ) ;;
             (*) usage ;;
         esac
     done
