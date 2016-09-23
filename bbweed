@@ -11,7 +11,7 @@ sub usage;
 sub fatal;
 
 my $prog = $0;
-(my $bbinv = $0) =~ s{bbtag$}{bbinv};
+(my $bbinv = $0) =~ s{bb\w+$}{bbinv};
 
 my $root = $ENV{'BB_ROOT'} ||= '/var/local/backup';
 
