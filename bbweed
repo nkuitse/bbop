@@ -1,0 +1,147 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use POSIX qw(strftime);
+use Getopt::Long
+    qw(:config posix_default gnu_compat require_order bundling no_ignore_case);
+
+sub usage;
+sub fatal;
+
+my $prog = $0;
+(my $bbinv = $0) =~ s{bbtag$}{bbinv};
+
+my $root = $ENV{'BB_ROOT'} ||= '/var/local/backup';
+
+my ($want_mode, $want_tape, $verbose, $list, $dryrun, $hum);
+my ($maxdate, $minage);
+my $tag = '+weed';
+
+my %u2s = qw(
+    y   31557600
+    w     604800
+    d      86400
+    h       3600
+    m         60
+    s          1
+);
+my %mul = qw(
+    K 1024.0
+    M 1048576.0
+    G 1073741824.0
+    T 1099511627776.0
+    P 1125899906842624.0
+    E 1152921504606846976.0
+);
+
+GetOptions(
+    'f' => sub { $want_mode = 'full' },
+    'i' => sub { $want_mode = 'incr' },
+    'd=s' => \$maxdate,
+    'a=s' => \$minage,
+    't=s' => \$want_tape,
+    'v' => \$verbose,
+    'm=s' => \$tag,
+    'l' => \$list,
+    'n' => \$dryrun,
+    'h' => \$hum,
+) or usage;
+if (@ARGV && $ARGV[0] =~ s/^\+//) {
+    $tag = shift @ARGV;
+}
+else {
+    $tag =~ s/^\+?//;
+}
+
+if (defined $minage) {
+    usage if defined $maxdate;
+    $maxdate = strftime('%Y%m%dT%H%M%S', localtime(time - dur2sec($minage)));
+}
+elsif (!defined $maxdate) {
+    $maxdate = strftime('%Y%m%dT%H%M%S', localtime);
+}
+else {
+    $maxdate =~ s/
+        ^(\d\d\d\d)-?(\d\d)-?(\d\d)(?:T(\d\d):?(\d\d)?:(\d\d))?$
+    /
+        sprintf '%04d%02d%02dT%02d%02d%02d', $1, $2, $3, $4 || 0, $5 || 0, $6 || 0
+    /ex or usage;
+}
+
+chdir $root
+    or fatal "chdir $root: $!";
+
+if ($list) {
+    fatal 'not implemented yet: -l';
+}
+else {
+    print STDERR "Dry run; no changes will be made\n" if $dryrun;
+    open my $fh, '-|', $bbinv, '-p', @ARGV
+        or fatal "exec bbinv: $!";
+    while (defined(my $line = <$fh>)) {
+        chomp $line;
+        my ($action, $size, $target, $series, $backup, $mode, $tape) = split / /, $line;
+        next if defined($want_tape) && $tape ne $want_tape;
+        next if defined($want_mode) && $mode ne $want_mode;
+        next if $backup gt $maxdate;
+        my $base = "targets/$target/series/$series/$backup";
+        if (!$dryrun) {
+            blather("ignore $target $series $backup :: already tagged $tag"), next if -d "$base+$tag";
+            my @files = grep { /^$base.\d+(?:\.gz)?/ } glob("$base.*");
+            blather("ignore $target $series $backup :: nothing to tag"), next if !@files;
+            mkdir "$base+$tag" or fatal "mkdir $base+tag: $!";
+            foreach my $f (@files) {
+                my $g = "$base+$tag/".basename($f);
+                rename $f, $g or fatal "tag $f: $!";
+            }
+        }
+        $size = num2hum($size) if $hum;
+        printf $hum ? ("%6s %-16s %-4s %s %-4.4s %s\n", num2hum($size), $target, $series, $backup, $mode, $tape)
+                    : ("%10u %-16s %-4s %s %-4.4s %s\n", $size, $target, $series, $backup, $mode, $tape);
+        blather("tagged $target $series $backup :: $size bytes");
+    }
+}
+
+sub blather {
+    print STDERR "@_\n" if $verbose;
+}
+
+sub dur2sec {
+    my ($p) = @_;
+    my $s = 0;
+    while ($p =~ s/^(\d+)([ywdhms])\s*//) {
+        $s += $1 * $u2s{$2};
+    }
+    $s += $p if $p =~ /^\d+$/;
+    return $s;
+}
+
+sub basename {
+    local $_ = shift;
+    s{.+/}{};
+    return $_;
+}
+
+sub num2hum {
+    local $_ = shift;
+    s/(\d+(?:\.\d+)?)/unitize($1)/e;
+    return $_;
+}
+
+sub unitize {
+    my ($n) = @_;
+    foreach my $u (qw(E P T G M K)) {
+        return sprintf('%d', $n/$mul{$u}).$u if $n > $mul{$u};
+    }
+    return $n;
+}
+
+sub sum {
+    my $n = 0;
+    local $_;
+    $n += $_ for @_;
+    return $n;
+}
+
