@@ -120,7 +120,7 @@ elsif ($purge) {
         }
         if (!$dryrun) {
             foreach my $d (glob("targets/*/*/series/*/*+$tag")) {
-                rmdir $d or fatal "purge $f: $!";
+                rmdir $d or fatal "purge $d: $!";
             }
         }
     }
