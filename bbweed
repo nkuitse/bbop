@@ -15,7 +15,7 @@ my $prog = $0;
 
 my $root = $ENV{'BB_ROOT'} ||= '/var/local/backup';
 
-my ($hide, $delete, $summarize, $want_mode, $want_tape, $verbose, $list, $dryrun, $hum);
+my ($delete, $purge, $summarize, $want_mode, $want_tape, $verbose, $list, $dryrun, $hum);
 my ($maxdate, $minage);
 my $tag = '+weed';
 
@@ -37,11 +37,11 @@ my %mul = qw(
 );
 
 GetOptions(
-    'c' => \$hide,
-    'x' => \$delete,
+    'd' => \$delete,
+    'x' => \$purge,
     'f' => sub { $want_mode = 'full' },
     'i' => sub { $want_mode = 'incr' },
-    'd=s' => \$maxdate,
+    'D=s' => \$maxdate,
     'a=s' => \$minage,
     't=s' => \$want_tape,
     'v' => \$verbose,
@@ -82,14 +82,21 @@ if ($dryrun) {
 }
 
 if ($list) {
-    my @tagged = glob("targets/*/*/series/*/*+$tag/*");
+    my @tagged = glob("targets/*/*/series/*/*+$tag");
     my $total_size = 0;
     if (@tagged) {
-        foreach my $f (@tagged) {
-            my $size = -s $f;
+        foreach my $d (@tagged) {
+            my (undef, $t1, $t2, undef, $s, $b) = split m{[/+]}, $d;
+            (my $base = $d) =~ s/\+$tag$//;
+            my $size = 0;
+            my @deleted = glob("$d/*");
+            my @other = grep { /\.\d+(?:\.gz)?/ } glob("$base.*");
+            my @files = ( @deleted, @other );
+            foreach my $f (@files) {
+                $size += -s $f;
+            }
+            printf "%7sB %s %s/%s %s %s\n", num2hum($size), (@deleted ? 'D' : '-'), $t1, $t2, $s, $b;
             $total_size += $size;
-            my (undef, $t1, $t2, undef, $s, undef, $b) = split m{[/+]}, $f;
-            printf "%7sB %s/%s %s %s\n", num2hum($size), $t1, $t2, $s, $b;
         }
     }
     else {
@@ -99,15 +106,15 @@ if ($list) {
         printf "%7sB total\n", num2hum($total_size);
     }
 }
-elsif ($delete) {
-    my @delete = glob("targets/*/*/series/*/*+$tag/*");
+elsif ($purge) {
+    my @tagged = glob("targets/*/*/series/*/*+$tag/*");
     my $total_size = 0;
-    if (@delete) {
-        blather("Deleting data files tagged +$tag");
-        foreach my $f (@delete) {
+    if (@tagged) {
+        blather("Purging data files tagged +$tag");
+        foreach my $f (@tagged) {
             blather($f);
             $total_size += -s $f;
-            unlink $f or fatal "delete $f: $!" if !$dryrun;
+            unlink $f or fatal "purge $f: $!" if !$dryrun;
         }
     }
     if ($verbose || $summarize) {
@@ -117,7 +124,7 @@ elsif ($delete) {
 else {
     blather(
         "Weeding parameters:",
-        "  type ". $want_mode // 'any',
+        "  type ". ($want_mode // 'any'),
         defined($want_tape) ? ("  on tape $want_tape") : (),
         "  tag $tag",
         "  older than $maxdate",
@@ -138,7 +145,7 @@ else {
             my @files = grep { /^$base.\d+(?:\.gz)?/ } glob("$base.*");
             blather("ignore $target $series $backup :: nothing to tag"), next if !@files;
             mkdir "$base+$tag" or fatal "mkdir $base+tag: $!";
-            if ($hide) {
+            if ($delete) {
                 foreach my $f (@files) {
                     my $g = "$base+$tag/".basename($f);
                     rename $f, $g or fatal "rename $f -> $g: $!";
