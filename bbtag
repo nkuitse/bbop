@@ -118,9 +118,14 @@ elsif ($purge) {
             $total_size += -s $f;
             unlink $f or fatal "purge $f: $!" if !$dryrun;
         }
+        if (!$dryrun) {
+            foreach my $d (glob("targets/*/*/series/*/*+$tag")) {
+                rmdir $d or fatal "purge $f: $!";
+            }
+        }
     }
     if ($verbose || $summarize) {
-        print STDERR "Total: ", num2hum($total_size), "B deleted\n";
+        print STDERR "Total: ", num2hum($total_size), "B purged\n";
     }
 }
 else {
