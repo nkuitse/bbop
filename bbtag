@@ -15,7 +15,7 @@ my $prog = $0;
 
 my $root = $ENV{'BB_ROOT'} ||= '/var/local/backup';
 
-my ($delete, $purge, $summarize, $want_mode, $want_tape, $verbose, $list, $dryrun, $hum);
+my ($delete, $purge, $summarize, $want_mode, $want_tape, $want_backup, $verbose, $list, $dryrun, $hum);
 my ($maxdate, $minage);
 my $tag = '+weed';
 
@@ -44,6 +44,7 @@ GetOptions(
     'D=s' => \$maxdate,
     'a=s' => \$minage,
     't=s' => \$want_tape,
+    'b=s' => \$want_backup,
     'v' => \$verbose,
     'm=s' => \$tag,
     'l' => \$list,
@@ -137,6 +138,7 @@ else {
         my ($action, $size, $target, $series, $backup, $mode, $tape) = split / /, $line;
         next if defined($want_tape) && $tape ne $want_tape;
         next if defined($want_mode) && $mode ne $want_mode;
+        next if defined($want_backup) && $backup ne $want_backup;
         next if $backup gt $maxdate;
         $total_size += $size;
         my $base = "targets/$target/series/$series/$backup";
