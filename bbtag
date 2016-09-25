@@ -36,6 +36,7 @@ my %mul = qw(
     E 1152921504606846976.0
 );
 
+@ARGV = qw(-l) if !@ARGV;
 GetOptions(
     'd' => \$delete,
     'x' => \$purge,
