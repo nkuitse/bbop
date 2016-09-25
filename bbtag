@@ -146,7 +146,7 @@ else {
             blather("ignore $target $series $backup :: already tagged $tag"), next if -d "$base+$tag";
             my @files = grep { /^$base.\d+(?:\.gz)?/ } glob("$base.*");
             blather("ignore $target $series $backup :: nothing to tag"), next if !@files;
-            mkdir "$base+$tag" or fatal "mkdir $base+tag: $!";
+            -d "$base+$tag" or mkdir "$base+$tag" or fatal "mkdir $base+tag: $!";
             if ($delete) {
                 foreach my $f (@files) {
                     my $g = "$base+$tag/".basename($f);
