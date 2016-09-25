@@ -15,7 +15,7 @@ my $prog = $0;
 
 my $root = $ENV{'BB_ROOT'} ||= '/var/local/backup';
 
-my ($delete, $want_mode, $want_tape, $verbose, $list, $dryrun, $hum);
+my ($delete, $summarize, $want_mode, $want_tape, $verbose, $list, $dryrun, $hum);
 my ($maxdate, $minage);
 my $tag = '+weed';
 
@@ -48,6 +48,7 @@ GetOptions(
     'l' => \$list,
     'n' => \$dryrun,
     'h' => \$hum,
+    's' => \$summarize,
 ) or usage;
 if (@ARGV && $ARGV[0] =~ s/^\+//) {
     $tag = shift @ARGV;
@@ -83,32 +84,38 @@ if ($list) {
     fatal 'not implemented yet: -l';
 }
 elsif ($delete) {
-    my @delete = glob("targets/*/series/*/*+$tag");
+    my @delete = glob("targets/*/*/series/*/*+$tag/*");
+    my $size = 0;
     if (@delete) {
         blather("Deleting data files tagged +$tag");
         foreach my $f (@delete) {
-            blather(
+            blather($f);
+            $size += -s $f;
             unlink $f or fatal "delete $f: $!" if !$dryrun;
         }
+    }
+    if ($verbose || $summarize) {
+        print STDERR "Total: ", num2hum($size), "B deleted\n";
     }
 }
 else {
     blather(
         "Weeding parameters:",
-        "  type ", $want_mode // 'any',
+        "  type ". $want_mode // 'any',
         defined($want_tape) ? ("  on tape $want_tape") : (),
-        "  tag  $tag",
+        "  tag $tag",
         "  older than $maxdate",
     );
     open my $fh, '-|', $bbinv, '-p', @ARGV
         or fatal "exec bbinv: $!";
-    my @delete;
+    my $total_size = 0;
     while (defined(my $line = <$fh>)) {
         chomp $line;
         my ($action, $size, $target, $series, $backup, $mode, $tape) = split / /, $line;
         next if defined($want_tape) && $tape ne $want_tape;
         next if defined($want_mode) && $mode ne $want_mode;
         next if $backup gt $maxdate;
+        $total_size += $size;
         my $base = "targets/$target/series/$series/$backup";
         if (!$dryrun) {
             blather("ignore $target $series $backup :: already tagged $tag"), next if -d "$base+$tag";
@@ -123,13 +130,16 @@ else {
         $size = num2hum($size) if $hum;
         printf $hum ? ("%6s %-16s %-4s %s %-4.4s %s\n", num2hum($size), $target, $series, $backup, $mode, $tape)
                     : ("%10u %-16s %-4s %s %-4.4s %s\n", $size, $target, $series, $backup, $mode, $tape);
-        blather("tagged $target $series $backup :: $size bytes");
+        # blather("tagged $target $series $backup :: $size bytes");
+    }
+    if ($verbose || $summarize) {
+        print STDERR "Total: ", num2hum($total_size), "B tagged\n";
     }
 }
 
 sub blather {
     return if !$verbose;
-    print STDERR "$_\n" for @_;
+    print STDERR "* $_\n" for @_;
 }
 
 sub dur2sec {
@@ -157,7 +167,7 @@ sub num2hum {
 sub unitize {
     my ($n) = @_;
     foreach my $u (qw(E P T G M K)) {
-        return sprintf('%d', $n/$mul{$u}).$u if $n > $mul{$u};
+        return sprintf('%.1f', $n/$mul{$u}).$u if $n > $mul{$u};
     }
     return $n;
 }
