@@ -9,8 +9,17 @@ while (<STDIN>) {
     chomp;
     my ($target, $series, $backup, $tape, $tapefile, $filename, $offset, $length, $meta) = split / /, $_, 9;
     my $stored = "$root/targets/$target/series/$series/$filename";
+    if ($length eq '-') {
+        print STDERR "Not a file: $_\n";
+        exit 2;
+    }
     if (! -e $stored) {
-        print STDERR "First read tape file $tapefile from tape $tape\n";
+        if ($tape eq '-') {
+            print STDERR "Not stored on tape: $tapefile\n";
+        }
+        else {
+            print STDERR "First read tape file $tapefile from tape $tape\n";
+        }
         exit 2;
     }
     print STDERR "\e[32;1m", $filename, "\e[0m\n";
