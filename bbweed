@@ -15,7 +15,7 @@ my $prog = $0;
 
 my $root = $ENV{'BB_ROOT'} ||= '/var/local/backup';
 
-my ($delete, $summarize, $want_mode, $want_tape, $verbose, $list, $dryrun, $hum);
+my ($hide, $delete, $summarize, $want_mode, $want_tape, $verbose, $list, $dryrun, $hum);
 my ($maxdate, $minage);
 my $tag = '+weed';
 
@@ -37,6 +37,7 @@ my %mul = qw(
 );
 
 GetOptions(
+    'c' => \$hide,
     'x' => \$delete,
     'f' => sub { $want_mode = 'full' },
     'i' => sub { $want_mode = 'incr' },
@@ -81,21 +82,36 @@ if ($dryrun) {
 }
 
 if ($list) {
-    fatal 'not implemented yet: -l';
+    my @tagged = glob("targets/*/*/series/*/*+$tag/*");
+    my $total_size = 0;
+    if (@tagged) {
+        foreach my $f (@tagged) {
+            my $size = -s $f;
+            $total_size += $size;
+            my (undef, $t1, $t2, undef, $s, undef, $b) = split m{[/+]}, $f;
+            printf "%7sB %s/%s %s %s\n", num2hum($size), $t1, $t2, $s, $b;
+        }
+    }
+    else {
+        blather("No tagged backups");
+    }
+    if ($verbose || $summarize) {
+        printf "%7sB total\n", num2hum($total_size);
+    }
 }
 elsif ($delete) {
     my @delete = glob("targets/*/*/series/*/*+$tag/*");
-    my $size = 0;
+    my $total_size = 0;
     if (@delete) {
         blather("Deleting data files tagged +$tag");
         foreach my $f (@delete) {
             blather($f);
-            $size += -s $f;
+            $total_size += -s $f;
             unlink $f or fatal "delete $f: $!" if !$dryrun;
         }
     }
     if ($verbose || $summarize) {
-        print STDERR "Total: ", num2hum($size), "B deleted\n";
+        print STDERR "Total: ", num2hum($total_size), "B deleted\n";
     }
 }
 else {
@@ -122,9 +138,11 @@ else {
             my @files = grep { /^$base.\d+(?:\.gz)?/ } glob("$base.*");
             blather("ignore $target $series $backup :: nothing to tag"), next if !@files;
             mkdir "$base+$tag" or fatal "mkdir $base+tag: $!";
-            foreach my $f (@files) {
-                my $g = "$base+$tag/".basename($f);
-                rename $f, $g or fatal "tag $f: $!";
+            if ($hide) {
+                foreach my $f (@files) {
+                    my $g = "$base+$tag/".basename($f);
+                    rename $f, $g or fatal "rename $f -> $g: $!";
+                }
             }
         }
         $size = num2hum($size) if $hum;
