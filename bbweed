@@ -15,7 +15,7 @@ my $prog = $0;
 
 my $root = $ENV{'BB_ROOT'} ||= '/var/local/backup';
 
-my ($want_mode, $want_tape, $verbose, $list, $dryrun, $hum);
+my ($delete, $want_mode, $want_tape, $verbose, $list, $dryrun, $hum);
 my ($maxdate, $minage);
 my $tag = '+weed';
 
@@ -37,6 +37,7 @@ my %mul = qw(
 );
 
 GetOptions(
+    'x' => \$delete,
     'f' => sub { $want_mode = 'full' },
     'i' => sub { $want_mode = 'incr' },
     'd=s' => \$maxdate,
@@ -73,13 +74,35 @@ else {
 chdir $root
     or fatal "chdir $root: $!";
 
+if ($dryrun) {
+    $verbose = 1;
+    blather("Dry run; no changes will be made");
+}
+
 if ($list) {
     fatal 'not implemented yet: -l';
 }
+elsif ($delete) {
+    my @delete = glob("targets/*/series/*/*+$tag");
+    if (@delete) {
+        blather("Deleting data files tagged +$tag");
+        foreach my $f (@delete) {
+            blather(
+            unlink $f or fatal "delete $f: $!" if !$dryrun;
+        }
+    }
+}
 else {
-    print STDERR "Dry run; no changes will be made\n" if $dryrun;
+    blather(
+        "Weeding parameters:",
+        "  type ", $want_mode // 'any',
+        defined($want_tape) ? ("  on tape $want_tape") : (),
+        "  tag  $tag",
+        "  older than $maxdate",
+    );
     open my $fh, '-|', $bbinv, '-p', @ARGV
         or fatal "exec bbinv: $!";
+    my @delete;
     while (defined(my $line = <$fh>)) {
         chomp $line;
         my ($action, $size, $target, $series, $backup, $mode, $tape) = split / /, $line;
@@ -105,7 +128,8 @@ else {
 }
 
 sub blather {
-    print STDERR "@_\n" if $verbose;
+    return if !$verbose;
+    print STDERR "$_\n" for @_;
 }
 
 sub dur2sec {
