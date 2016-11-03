@@ -4,6 +4,7 @@ use strict;
 use warnings;
 
 use POSIX qw(strftime);
+use File::Basename qw(basename dirname);
 use Getopt::Long
     qw(:config posix_default gnu_compat require_order bundling no_ignore_case);
 
@@ -11,6 +12,7 @@ sub usage;
 sub fatal;
 
 my $root = '/var/local/backup';
+my $t0p_root = '/var/local/t0p';
 my $now = time;
 
 my ($current, $full, $on_tape, $on_this_tape, $all, $verbose, $period, $check);
@@ -50,6 +52,9 @@ $maxnum = shift if @ARGV && $ARGV[0] =~ /^[1-9][0-9]*$/;
 my $recent = $period ? period2sub($period) : undef;
 
 chdir $root or fatal "chdir $root: $!";
+
+my %job2tape;
+read_tape_logs() if $on_tape;
 
 my (@backups, %lacking);
 my @targets = identify_targets(@ARGV);
@@ -158,6 +163,17 @@ sub parse_receipt {
         $err += $1, next if /errors ([0-9]+)/;
     }
     return $err, $size, sort keys %tape;
+}
+
+sub read_tape_logs {
+    foreach my $log (glob("$t0p_root/tape/*/log")) {
+        next if ! -s $log;
+        my $t = basename(dirname($log));
+        foreach (readfile($log)) {
+            my (undef, undef, $j) = split / /;
+            $job2tape{$j}{$t} = 1;
+        }
+    }
 }
 
 sub print_backup_info {
