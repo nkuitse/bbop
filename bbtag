@@ -212,3 +212,30 @@ sub sum {
     return $n;
 }
 
+sub usage {
+    print STDERR <<EOS;
+usage: bbtag [OPTION...] [+TAG] [TARGET...]
+options:
+    -n        dry run
+    -l        list tagged backups
+    -x        purge (i.e., rm) tagged backups
+    -d        delete (i.e., mv)
+    -f        full backups only
+    -i        incremental backups only
+    -s        print summary
+    -h        print numbers in human-friendly form
+    -m TAG    use TAG instead of `weed'
+    -b BKUP   tag only BKUP
+    -t TAPE   tag only when present on TAPE
+    -D DATE   tag only backups from DATE or older
+    -a DUR    tag only backups from DUR ago or older
+    -v        be verbose
+EOS
+    exit 1;
+}
+
+sub fatal {
+    print STDERR "bbtag: @_\n";
+    exit 2;
+}
+
