@@ -49,6 +49,11 @@ backup() {
     fi
     for t in ${(u)targets}; do
         run zubak up $zubakopts $t
+    done |
+    while read tdone s mode b; do
+        make-t0p-job $tdone $s $mode $b | read job
+        t0queue -a $job
+        # TODO: print $tdone $s $mode $b $job
     done
     $dryrun || print 'Write jobs to tape' >&2
     run t0write -a
@@ -260,15 +265,17 @@ cmd_run() {
 }
 
 cmd_inv() {
-    typeset opt want tlastfull mode tape size total
+    typeset opt want wantmode tlastfull mode tape size total
     typeset -a tbackups backups
     typeset -A tsize
-    while getopts :nvpk opt; do
+    while getopts :nvpkfi opt; do
         case $opt in
             (n) dryrun=true ;;
             (v) verbose=true ;;
             (p) want=P ;;
             (k) want=K ;;
+            (f) wantmode=full ;;
+            (i) wantmode=incr ;;
             (*) usage ;;
         esac
     done
@@ -289,6 +296,7 @@ cmd_inv() {
         done
         typeset action=P
         for s b mode in $tbackups; do
+            [[ -z $wantmode || $mode == $wantmode ]] || continue
             set -- targets/$t/series/$s/$b.[0-9]*(N)
             if [[ ${s}:${b} == $tlastfull ]]; then
                 action=K
@@ -479,6 +487,47 @@ sec2approxdur() {
     else
         print ${s}s
     fi
+}
+make-t0p-job() {
+    typeset target=$1 series=$2 mode=$3 backup=$4 site=$(zubak-site) job
+    typeset -a props head tail
+    integer i
+    props=(
+        -p root=$PWD
+        -p receipt=$PWD/$backup.t0receipt
+        -p zubak-site=$site
+        -p zubak-target=$target
+        -p zubak-series=$series
+        -p zubak-backup=$backup
+    )
+    
+    # Create the t0p job
+    if $dryrun; then
+        print t0job -c $props >&2
+        job=THE-JOB-ID-GOES-HERE
+    else
+        t0job -c $props | read job
+        [[ -n $job ]] || exit 2
+    fi
+    
+    # Divide into batches
+    tail=( $backup.[0-9]*(NOm) )
+    head=( $backup.[a-z]*(NOm) ${tail[-1]} )
+    tail[-1]=()
+
+    # Add batches to the job
+    if $dryrun; then
+        print t0job -a -p comment="'metadata and last data segment'" $job $head >&2
+        for (( i = 1; i <= $#tail; i++ )); do
+            print t0job -a -p comment=\""data segment $((i-1))"\" $job ${tail[i]} >&2
+        done
+        exit 0
+    fi
+    t0job -a -p comment='metadata and last data segment' $job $head
+    for (( i = 1; i <= $#tail; i++ )); do
+        t0job -a -p comment="data segment $((i-1))" $job ${tail[i]}
+    done
+    print $job
 }
 
 usage() {
