@@ -347,48 +347,6 @@ askbool() {
     return $err
 }
 
-### make-zubak-find() {
-###     typeset t=$1 host=$2 root=$3
-###     typeset -a roots
-###     case $root in
-###         (user) roots=( ${host}:/home ${host}:root ) ;;
-###         (*)    roots=( ${host}:/${root} ) ;;
-###     esac
-###     cat > targets/$t/bin/zubak-find <<EOS
-### #!/bin/zsh -e
-### find $roots ...
-### EOS
-### }
-### 
-### make-zubak-begin() {
-###     typeset t=$1 host=$2
-###     if [[ $host != $(hostname -s) && $host != $HOST:r ]]; then
-###         print 'Create zubak-begin' >&2
-###         cat > targets/$t/bin/zubak-begin <<EOS
-### #!/bin/zsh -e
-### mkdir ${host}:
-### sshfs ${host}:/ ${host}:/
-### sleep 1
-### EOS
-###         chmod a+x targets/$t/bin/zubak-begin
-###     fi
-### }
-### 
-### make-zubak-end() {
-###     typeset t=$1 host=$2
-###     if [[ $host != $(hostname -s) && $host != $HOST:r ]]; then
-###         print 'Create zubak-end' >&2
-###         cat > targets/$t/bin/zubak-end <<EOS
-### #!/bin/zsh -e
-### umount ${host}:
-### rmdir ${host}:
-### exec zubak-mkt0job "$@"
-### EOS
-###         chmod a+x targets/$t/bin/zubak-end
-###     fi
-### }
-### 
-
 find-on-tape() {
     while read t s b m; do
         f=$(perl -e '$m=shift; $m =~ m{[^/]+(.+)}; print $1, "\n"')
