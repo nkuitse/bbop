@@ -1,0 +1,101 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use Getopt::Long
+    qw(:config posix_default gnu_compat require_order bundling no_ignore_case);
+
+sub usage;
+sub fatal;
+sub cancelled;
+
+my $offsite;
+GetOptions(
+    'o|offsite' => \$offsite,
+) or usage;
+
+usage if @ARGV > 1;
+my ($next) = @ARGV;
+
+my $fh;
+open $fh, '-|', 't0tapes'
+    or fatal "t0tapes: $!";
+my (%tape, $ok);
+while (<$fh>) {
+    chomp;
+    my @F = split /\s+/;
+    $ok = 1, next if $F[0] eq 'Tape' && $F[1] eq 'Status';
+    fatal "t0tapes: unrecognized output: $_" if !$ok;
+    $F[5] =~ s/%$//;
+    $tape{$F[0]} = {
+        'name' => $F[0],
+        'status' => $F[1],
+        'available' => $F[5],
+    };
+}
+close $fh or fatal "t0tapes: $!";
+my @loaded = map { $_->{'name'} } grep { $_->{'status'} eq 'loaded' } values %tape;
+fatal "multiple tapes loaded: @loaded" if @loaded > 1;
+fatal "no tape loaded" if @loaded == 0;
+if (!defined $next) {
+    $loaded[0] =~ /^([A-Z]*)(\d+)$/ or die "tape name: $loaded[0]\n";
+    my ($char, $num) = ($1, $2);
+    $next = $char . ++$num;
+}
+fatal "can't determine which tape to load" if !defined $tape{$next};
+my $avail = $tape{$next}{'available'};
+if ($avail < 10.0) {
+    print STDERR "Tape $next has only $avail% remaining space\n";
+    cancelled if !askbool('Proceed anyhow?');
+}
+
+system('t0eject') == 0 or die "t0eject: $!\n";
+system('t0load', $next) == 0 or die "t0load: $!\n";
+
+if ($offsite || askbool("Move tape $loaded[0] offsite?")) {
+    my ($from, $to) = map { "/var/local/t0p/tape/$loaded[0]/" . $_ } '@offline', '@offsite';
+    rename $from, $to or fatal "mark tape $loaded[0] offsite: $!";
+}
+
+# --- Functions
+
+sub askbool {
+    my ($prompt, $def) = @_;
+    $prompt .= $def ? ' [Yn] ' : ' [yN] ';
+    while (1) {
+        print STDERR $prompt;
+        my $ans = <STDIN>;
+        cancelled if !defined $ans;
+        return $def if $ans =~ /^$/;
+        return 1 if $ans =~ /^[Yy]/;
+        return 0 if $ans =~ /^[Nn]/;
+    }
+}
+
+sub cancelled {
+    print STDERR "Cancelled\n";
+    return 2;
+}
+
+sub fatal {
+    print STDERR "$0: @_\n";
+    exit 2;
+}
+
+sub usage {
+    print STDERR "usage: $0 [NEW_TAPE]\n";
+    exit 1;
+}
+
+__END__
+Tape   Status   Capacity     Used   Files  Avail%  Last job
+J1     --           2.3T        0       0  100.0%  --
+P1     --           2.3T   165.2G    3312   92.9%  2016-08-18 f8fe1d6c-0f96-4c9c-8c44-ba234af201e5
+P2     offsite      2.3T   347.3G    6753   85.1%  2016-09-30 fa3d7692-1091-48ea-8a19-cdbacb22cee7
+P3     loaded       2.3T   132.8G    2821   94.3%  2016-11-05 e0d9e233-9e98-43b0-810b-b728b47b6e13
+P4     --           2.3T        0       0  100.0%  --
+P5     --           2.3T        0       0  100.0%  --
+P6     --           2.3T        0       0  100.0%  --
+Tx1    offsite      2.3T   270.6G    5554   88.4%  2016-06-25 d1ea8ab6-2809-49f9-855b-1c995f459b03
+
