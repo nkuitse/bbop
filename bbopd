@@ -1,0 +1,249 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+package App::bbopd;
+
+use base qw(Net::Server);
+
+sub fatal;
+
+my $prog = basename($0);
+my $root = $ENV{'BB_ROOT'} || '/var/local/backup';
+chdir $root or fatal "chdir $root: $!";
+
+my (%mtime, %contents, %target, %queue);
+
+App::bbopd->run(port => 10187);
+
+# --- Dispatch requests
+
+sub process_request {
+    my $self = shift;
+    my $ok;
+    my $auth;
+    eval {
+        local $SIG{'ALRM'} = sub { die };
+        my $prev_alarm = alarm(60);
+        my ($cmd, @params) = readmsg(\*STDIN);
+        return if !defined $cmd;
+        $cmd =~ tr/-/_/;
+        if (@params && $params[0]{'*'}) {
+            my $auth = shift @params;
+            check_auth($auth, $cmd);
+        }
+        ( __PACKAGE__->can('cmd_'.$cmd) || sub { err(400, "unrecognized request: $cmd") } )->(@params);
+        alarm($prev_alarm);
+        $ok = 1;
+    };
+    err(500, 'timed out') if !$ok;
+}
+
+# --- Command handlers
+
+sub cmd_backups {
+    my @backups;
+    foreach (@_) {
+        my $t = $_->{'target'};
+        my $s = $_->{'series'};
+        foreach my $bf (glob("targets/$t/series/$s/*.backup")) {
+            my @b = file_contents($bf, sub { get_backup($t, $s, @_) });
+            push @backups, @b;
+        }
+    }
+    ok(@backups);
+}
+
+sub cmd_series {
+    my @series;
+    foreach (@_) {
+        my $t = $_->{'target'};
+        my @s = file_contents("targets/$t/series.list", sub { [map { get_series($t, $_) } @_] });
+        push @series, @s;
+    }
+    ok(@series);
+}
+
+sub cmd_targets {
+    read_targets();
+    ok(values %target);
+}
+
+sub cmd_queue_list {
+    my @jobs;
+    read_queues();
+    foreach my $q (sort keys %queue) {
+        my @targets = @{ $queue{$q} };
+        push @jobs, {
+            'queue' => $q,
+            'target' => $_
+        } for @targets;
+    }
+    ok(@jobs);
+}
+
+sub cmd_ping {
+    ok({'pong'=>1});
+}
+
+sub cmd_echo {
+    ok(@_);
+}
+
+sub cmd_close {
+    ok();
+    exit 0;
+}
+
+# --- Read and write bbopd messages
+
+sub readmsg {
+    my ($fh) = @_;
+    my $cmd = <$fh>;
+    return if !defined $cmd;
+    $cmd =~ s/\x0d?\x0a\z//;
+    my @params;
+    while (<$fh>) {
+        s/\x0d?\x0a\z//;
+        push(@params, {}), next if $_ eq '+';
+        push(@params, {'*' => 1 }), next if $_ eq '*';
+        return($cmd, @params) if $_ eq '.';
+        die if !@params || !/^([a-z][-a-z0-9]*) (.*)\z/;
+        $params[-1]{$1} = unesc($2);
+    }
+    return;
+}
+
+sub writemsg {
+    my $status = shift;
+    print $status, "\x0d\x0a";
+    foreach (@_) {
+        print '+', "\x0d\x0a";
+        foreach my $k (sort keys %$_) {
+            my $v = $_->{$k};
+            printf "%s %s%s", $k, esc($v), "\x0d\x0a";
+        }
+    }
+    print '.', "\x0d\x0a";
+}
+
+sub unesc {
+    local $_ = shift;
+    s/{([0-9a-f]{2})}/chr hex $1/eg;
+    return $_;
+}
+
+sub esc {
+    local $_ = shift;
+    s/([{}\x00-\x08\x0a\x1f\x80-\xff])/sprintf '{%02x}', ord $1/eg;
+    return $_;
+}
+
+sub ok {
+    writemsg('ok', @_);
+}
+
+sub err {
+    my ($num, $msg) = @_;
+    writemsg('err', { 'number' => $num, 'message' => $msg });
+    print STDERR "error: $num $msg\n";
+}
+
+# --- Other functions
+
+sub queues {
+    my @queues = glob('queue/*');
+    #foreach my $filter (@_) {
+    #    my $queue = $filter->{'queue'} or next;
+    #    @queues = grep { $_ eq $queue } @queues;
+    #}
+    return @queues;
+}
+
+sub basename {
+    (my $f = shift) =~ s{.+/}{};
+    return $f;
+}
+
+sub fatal {
+    print STDERR "$prog: @_\n";
+    exit 2;
+}
+
+sub check_auth {
+    my ($auth) = @_;
+}
+
+sub file_contents {
+    my ($f, $map) = @_;
+    my $fh = open_newer($f)
+        or return $contents{$f};
+    $map ||= sub { [@_] };
+    return $contents{$f} = $map->(read_contents($fh));
+}
+
+sub open_newer {
+    my $f = pop;
+    my $prev_mtime = $mtime{$f} || 0;
+    my $mtime = (stat $f)[9] or die "stat $f: $!";
+    return if $mtime eq $prev_mtime;
+    my $fh = xopen('<', $f);
+    $mtime{$f} = $mtime;
+    return $fh;
+}
+
+sub read_targets {
+    %target = map { $_->{'target'} => $_ } file_contents('targets.list', sub { [map { get_target($_) } @_] });
+}
+
+sub read_queues {
+    %queue = map { basename($_) => [ file_contents($_) ] } glob('queue/*');
+}
+
+sub get_target {
+    my ($t) = @_;
+    return {
+        'target' => $t,
+    };
+}
+
+sub get_series {
+    my ($t, $s) = @_;
+    return {
+        'target' => $t,
+        'series' => $s,
+    };
+}
+
+sub get_backup {
+    my $t = shift;
+    my $s = shift;
+    my %backup;
+    my $n = 0;
+    foreach (@_) {
+        $backup{$1} = $2, next if /^(\w+) (\S*)$/;
+        $n++ if /^\@(\d+) \*(\d+) #(\S+) (\S+)$/;
+    }
+    $backup{'target'} = $t;
+    $backup{'segments'} = $n;
+    return \%backup;
+}
+
+sub read_contents {
+    my ($f) = @_;
+    my $fh = ref($f) ? $f : xopen('<', $f);
+    my @lines = <$fh>;
+    close $fh;
+    chomp @lines;
+    return @lines;
+}
+
+sub xopen {
+    my $file = pop;
+    return $file if ref $file;
+    my $mode = @_ ? shift : '<';
+    open my $fh, $mode, $file or die "open $file; $!";
+    return $fh;
+}
+
