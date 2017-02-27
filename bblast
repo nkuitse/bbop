@@ -15,7 +15,7 @@ my $root = '/var/local/backup';
 my $t0p_root = '/var/local/t0p';
 my $now = time;
 
-my ($current, $full, $on_tape, $on_this_tape, $all, $verbose, $period, $check);
+my ($current, $full, $on_tape, $on_this_tape, $verbose, $period, $check);
 my $maxnum = 1;
 
 my %u2s = qw(
@@ -41,13 +41,14 @@ GetOptions(
     'f|full' => \$full,
     't|on-tape' => \$on_tape,
     'T|on-this-tape=s' => sub { $on_tape = 1; $on_this_tape = $_[1] },
-    'a|all' => \$all,
+    'a|all' => sub { undef $maxnum },
     'v|verbose' => \$verbose,
     'p|period=s' => \$period,
     'k|check' => \$check,
     'n|count=i' => \$maxnum,
 ) or usage;
 $maxnum = shift if @ARGV && $ARGV[0] =~ /^[1-9][0-9]*$/;
+$period = shift if @ARGV && $ARGV[0] =~ /^[1-9][0-9]*[ywdhms]/;
 
 my $recent = $period ? period2sub($period) : undef;
 
