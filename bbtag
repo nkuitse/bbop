@@ -103,6 +103,7 @@ if ($list) {
     }
     else {
         blather("No tagged backups");
+        exit 0;
     }
     if ($verbose || $summarize) {
         printf "%7sB total\n", num2hum($total_size);
