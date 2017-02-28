@@ -150,7 +150,7 @@ else {
         $total_size += $size;
         my $base = "targets/$target/series/$series/$backup";
         if (!$dryrun) {
-            blather("ignore $target $series $backup :: already tagged $tag"), next if -d "$base+$tag";
+            blather("ignore $target $series $backup :: already tagged $tag"), next if !$delete && -d "$base+$tag";
             my @files = grep { /^$base.\d+(?:\.gz)?/ } glob("$base.*");
             blather("ignore $target $series $backup :: nothing to tag"), next if !@files;
             -d "$base+$tag" or mkdir "$base+$tag" or fatal "mkdir $base+tag: $!";
