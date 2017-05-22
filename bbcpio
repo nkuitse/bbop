@@ -1,0 +1,140 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+my %type2mode = (
+    'l' => 0120000,  # symlink
+    's' => 0140000,  # socket
+    'f' => 0100000,  # regular file
+    'b' => 0060000,  # block device
+    'd' => 0040000,  # directory
+    'c' => 0020000,  # character device
+    'p' => 0010000,  # FIFO
+);
+my $next_ino = 1;
+my @trailer = qw(
+30 37 30 37 30 37 30 30  30 30 30 30 30 30 30 30
+30 30 30 30 30 30 30 30  30 30 30 30 30 30 30 30
+30 30 30 30 30 30 30 30  30 31 30 30 30 30 30 30
+30 30 30 30 30 30 30 30  30 30 30 30 30 30 30 31
+33 30 30 30 30 30 30 30  30 30 30 30 54 52 41 49
+4c 45 52 21 21 21 00 00
+);
+my $trailer = pack('H*', join '', @trailer);
+
+my $root = $ENV{BBOP_ROOT} // '/var/local/backup';
+
+my %get;
+
+while (<STDIN>) {
+    chomp;
+    my ($target, $series, $backup, $tape, $tapefile, $segfile, $offset, $length, $filemeta) = split / /, $_, 9;
+    my ($action, $path, $meta) = parse_meta($filemeta);
+    next if $action ne '+';
+    if ($length ne '-' && $length > 0) {
+        my $stored = "$root/targets/$target/series/$series/$segfile";
+        if (! -e $stored) {
+            if ($tape eq '-') {
+                print STDERR "Not stored on tape: $tapefile\n";
+            }
+            else {
+                print STDERR "First read tape file $tapefile from tape $tape\n";
+            }
+            exit 2;
+        }
+        push @{ $get{$stored} ||= [] }, [ $path, $meta, $offset, $length ];
+    }
+    else {
+        push @{ $get{''} ||= [] }, [ $path, $meta, 0, 0 ];
+    }
+}
+
+foreach my $stored (sort keys %get) {
+    my @files_to_get = sort { $a->[2] <=> $b->[2] or $a->[0] cmp $b->[0] } @{ $get{$stored} };
+    my $fh;
+    if ($stored ne '') {
+        print STDERR "\e[32;1m", $stored, "\e[0m\n";
+        open $fh, '-|', 'gunzip', '-c', $stored
+            or die "bbtar: open $stored: $!";
+    }
+    my $pos = 0;
+    foreach (@files_to_get) {
+        my ($path, $meta, $offset, $length) = @$_;
+        my $buf = '';
+        my $size = $length || 0;
+        my $hdr = mkheader($path, $meta);
+        print $hdr;
+        if ($offset < $pos) {
+            die "Can't seek backwards from $pos to $offset in $stored to find $path\n";
+        }
+        while ($offset > $pos) {
+            my $n = $offset - $pos;
+            $n = 32768 if $n > 32768;
+            $pos += (sysread($fh, $buf, $n) || die "bbtar read $stored: $!");
+        }
+        while ($length > 0) {
+            my $n = $length < 32768 ? $length : 32768;
+            $length -= (sysread($fh, $buf, $n) || die "bbtar read $stored: $!");
+            print $buf;
+        }
+        $pos += $size;
+    }
+}
+print $trailer;
+my $pos = tell STDOUT;
+my $mod = $pos % 512;
+if ($mod) {
+    print "\000" x (512 - $mod);
+}
+
+sub parse_meta {
+    # +f c1466765754 g1501 m1221250770 p100600 r0 u1501 *286 /export/user/paul/etc/getmail/rc/nkuitse@nkuitse.com
+    local $_ = shift;
+    s/^([-+])([a-z]) // or die;
+    my ($action, $type) = ($1, $2);
+    s{ ([.\/].*)}{} or die;
+    my $path = $1;
+    my %meta =( 'type' => $type, map { substr($_,0,1) => substr($_,1) } split / / );
+    return ($action, $path, \%meta);
+}
+
+sub mkheader {
+    my ($path, $meta) = @_;
+    my $dev   = $meta->{'d'} || 0;
+    my $ino   = $next_ino++;
+    my $nlink = $meta->{'type'} eq 'd' ? 3 : 1;
+    my $mode  = $meta->{'p'} | $type2mode{$meta->{'type'}};
+    my $uid   = $meta->{'u'};
+    my $gid   = $meta->{'g'};
+    my $size  = $meta->{'*'} || 0;
+    my $mtime = $meta->{'m'};
+    my $rdev  = $meta->{'r'} || 0;
+    my $hdr = '070707';
+    $hdr .= sprintf('%06o', $dev);
+    $hdr .= sprintf('%06o', $ino);
+    $hdr .= sprintf('%06o', $mode);
+    $hdr .= sprintf('%06o', $uid);
+    $hdr .= sprintf('%06o', $gid);
+    $hdr .= sprintf('%06o', $nlink);
+    $hdr .= sprintf('%06o', $rdev);
+    $hdr .= sprintf('%011o', $mtime);
+    $hdr .= sprintf('%06o', length($path)+1);
+    $hdr .= sprintf('%011o', $size);
+    $hdr .= $path . "\000";
+    return $hdr;
+}
+
+### cpio(5)
+### Width  Name      Description
+###    6   magic     magic number "070707"
+###    6   dev       device where file resides
+###    6   ino       I-number of file
+###    6   mode      file mode
+###    6   uid       owner user ID
+###    6   gid       owner group ID
+###    6   nlink     number of links to file
+###    6   rdev      device major/minor for special file
+###   11   mtime     modify time of file
+###    6   namesize  length of file name
+###   11   filesize  length of file to follow 
