@@ -447,7 +447,7 @@ sec2approxdur() {
     fi
 }
 make-t0p-job() {
-    typeset target=$1 series=$2 mode=$3 backup=$4 site=$(zubak-site) job
+    typeset target=$1 series=$2 mode=$3 backup=$4 site=$(zubak site) job
     typeset -a props head tail
     integer i
     props=(
