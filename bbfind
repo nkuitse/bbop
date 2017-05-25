@@ -12,7 +12,7 @@ sub fatal;
 
 my %opt;
 
-getopts(':amr', \%opt) or usage;
+getopts(':amrB:A:', \%opt) or usage;
 
 chdir($opt{'r'} ||= $ENV{'BB_ROOT'} ||= '/var/local/backup') or fatal "chdir $ENV{BB_ROOT}: $!";
 
@@ -29,6 +29,8 @@ foreach my $f (@ARGV) {
     while (<$fh>) {
         if (m{^(targets/(\S+?)/series/(\d+)/(\d[^.]+))\.eum:(.)(.) ([a-z*@#]\d+(?: [a-z*@#]\d+)+) (.+)}) {
             my ($base, $target, $series, $backup, $status, $typechar, $stat, $path) = ($1, $2, $3, $4, $5, $6, $7, $8);
+            next if $opt{'B'} && $backup gt $opt{'B'};
+            next if $opt{'A'} && $backup lt $opt{'A'};
             (my $munged_path = $path) =~ s{^\.[^./]+\./}{/};
             if (defined $rx) {
                 next if $munged_path !~ $rx;
