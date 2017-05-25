@@ -25,67 +25,74 @@ my $trailer = pack('H*', join '', @trailer);
 
 my $root = $ENV{BBOP_ROOT} // '/var/local/backup';
 
-my %get;
-
+my %on_disk;
+my $fh;
+my $prev_stored = '';
+my $prev_path = '';
+my $pos = 0;  # Within the current segment
 while (<STDIN>) {
     chomp;
     my ($target, $series, $backup, $tape, $tapefile, $segfile, $offset, $length, $filemeta) = split / /, $_, 9;
     my ($action, $path, $meta) = parse_meta($filemeta);
     next if $action ne '+';
-    if ($length ne '-' && $length > 0) {
-        my $stored = "$root/targets/$target/series/$series/$segfile";
-        if (! -e $stored) {
-            if ($tape eq '-') {
-                print STDERR "Not stored on tape: $tapefile\n";
-            }
-            else {
-                print STDERR "First read tape file $tapefile from tape $tape\n";
-            }
-            exit 2;
+    if ($path ne $prev_path) {
+        print mkheader($path, $meta);
+        $prev_path = $path;
+    }
+    next if $length eq '-';
+    my $stored = "$root/targets/$target/series/$series/$segfile";
+    if (!on_disk($stored)) {
+        if ($tape eq '-') {
+            print STDERR "Not stored on tape: $tapefile\n";
         }
-        push @{ $get{$stored} ||= [] }, [ $path, $meta, $offset, $length ];
+        else {
+            print STDERR "First read tape file $tapefile from tape $tape\n";
+        }
+        exit 2;
     }
-    else {
-        push @{ $get{''} ||= [] }, [ $path, $meta, 0, 0 ];
-    }
-}
-
-foreach my $stored (sort keys %get) {
-    my @files_to_get = sort { $a->[2] <=> $b->[2] or $a->[0] cmp $b->[0] } @{ $get{$stored} };
-    my $fh;
-    if ($stored ne '') {
+    if ($stored ne $prev_stored) {
         print STDERR "\e[32;1m", $stored, "\e[0m\n";
         open $fh, '-|', 'gunzip', '-c', $stored
             or die "bbtar: open $stored: $!";
+        $pos = 0;
+        $prev_stored = $stored;
     }
-    my $pos = 0;
-    foreach (@files_to_get) {
-        my ($path, $meta, $offset, $length) = @$_;
-        my $buf = '';
-        my $size = $length || 0;
-        my $hdr = mkheader($path, $meta);
-        print $hdr;
-        if ($offset < $pos) {
-            die "Can't seek backwards from $pos to $offset in $stored to find $path\n";
-        }
-        while ($offset > $pos) {
-            my $n = $offset - $pos;
-            $n = 32768 if $n > 32768;
-            $pos += (sysread($fh, $buf, $n) || die "bbtar read $stored: $!");
-        }
-        while ($length > 0) {
-            my $n = $length < 32768 ? $length : 32768;
-            $length -= (sysread($fh, $buf, $n) || die "bbtar read $stored: $!");
-            print $buf;
-        }
-        $pos += $size;
+    my $buf;
+    if ($offset < $pos) {
+        die "Can't seek backwards from $pos to $offset in $stored to find $path\n";
     }
+    while ($offset > $pos) {
+        my $n = $offset - $pos;
+        $n = 32768 if $n > 32768;
+        my $read = sysread($fh, $buf, $n);
+        # printf STDERR "DEBUG skipped %d of %d bytes at pos=%d : %d bytes remaining\n", $read, $n, $pos, $offset - $pos - $read;
+        $pos += $read;
+        die "bbtar skip $stored: $!" if !$read;
+    }
+    while ($length > 0) {
+        my $n = $length < 32768 ? $length : 32768;
+        my $read = sysread($fh, $buf, $n);
+        $length -= $read;
+        # printf STDERR "DEBUG read %d of %d bytes at pos=%d : %d bytes remaining\n", $read, $n, $pos, $length;
+        $pos += $read;
+        die "bbtar read $stored: $!" if !$read;
+        print $buf;
+    }
+    $pos += $length;
 }
 print $trailer;
-my $pos = tell STDOUT;
-my $mod = $pos % 512;
+my $mod = tell(STDOUT) % 512;
 if ($mod) {
     print "\000" x (512 - $mod);
+}
+
+# --- Functions
+
+sub on_disk {
+    my ($f) = @_;
+    my $o = $on_disk{$f};
+    return $o if defined $o;
+    return $on_disk{$f} = -e $f;
 }
 
 sub parse_meta {
@@ -96,6 +103,7 @@ sub parse_meta {
     s{ ([.\/].*)}{} or die;
     my $path = $1;
     my %meta =( 'type' => $type, map { substr($_,0,1) => substr($_,1) } split / / );
+    $meta{'p'} = oct $meta{'p'};
     return ($action, $path, \%meta);
 }
 
