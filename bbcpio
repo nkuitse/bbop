@@ -3,6 +3,21 @@
 use strict;
 use warnings;
 
+use Getopt::Long
+    qw(:config posix_default gnu_compat require_order bundling no_ignore_case);
+
+sub usage;
+
+my ($strip, $pfx, $pfx_target, $pfx_series, $pfx_backup);
+GetOptions(
+    'u=s' => \$strip,
+    'p=s' => \$pfx,
+    'T'   => \$pfx_target,
+    'S'   => \$pfx_series,
+    'B'   => \$pfx_backup,
+) or usage;
+$strip =~ s{/*$}{/};  # Make sure it ends in a single slash
+
 my %type2mode = (
     'l' => 0120000,  # symlink
     's' => 0140000,  # socket
@@ -36,7 +51,7 @@ while (<STDIN>) {
     my ($action, $path, $meta) = parse_meta($filemeta);
     next if $action ne '+';
     if ($path ne $prev_path) {
-        print mkheader($path, $meta);
+        print mkheader($path, $meta, $target, $series, $backup);
         $prev_path = $path;
     }
     next if $length eq '-';
@@ -108,7 +123,18 @@ sub parse_meta {
 }
 
 sub mkheader {
-    my ($path, $meta) = @_;
+    my ($path, $meta, $target, $series, $backup) = @_;
+    $path =~ s{^\Q$strip\E}{}o if defined $strip;
+    my $prefix = join '/', (
+        defined $pfx        ? ($pfx   ) : (),
+        defined $pfx_target ? ($target) : (),
+        defined $pfx_series ? ($series) : (),
+        defined $pfx_backup ? ($backup) : (),
+    );
+    if (length $prefix) {
+        $prefix .= '/' if $path !~ m{^/};
+        $path = $prefix . $path;
+    }
     my $dev   = $meta->{'d'} || 0;
     my $ino   = $next_ino++;
     my $nlink = $meta->{'type'} eq 'd' ? 3 : 1;
