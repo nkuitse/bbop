@@ -16,7 +16,7 @@ GetOptions(
     'S'   => \$pfx_series,
     'B'   => \$pfx_backup,
 ) or usage;
-$strip =~ s{/*$}{/};  # Make sure it ends in a single slash
+$strip =~ s{/*$}{/} if defined $strip;  # Make sure it ends in a single slash
 
 my %type2mode = (
     'l' => 0120000,  # symlink
