@@ -25,7 +25,7 @@ my (%tsb2tnf, %choice);
 foreach my $f (@ARGV) {
     my $rx = $opt{m} ? qr/$f/ : undef;
     my @cmd = ($rx ? 'egrep' : 'fgrep');
-    push @cmd, '-i' if $opt{'i'}
+    push @cmd, '-i' if $opt{'i'};
     open my $fh, '-|', @cmd, $f, @eum or fatal "fgrep: $!";
     while (<$fh>) {
         if (m{^(targets/(\S+?)/series/(\d+)/(\d[^.]+))\.eum:(.)(.) ([a-z*@#]\d+(?: [a-z*@#]\d+)+) (.+)}) {
