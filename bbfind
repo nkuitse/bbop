@@ -12,7 +12,7 @@ sub fatal;
 
 my %opt;
 
-getopts(':amirB:A:', \%opt) or usage;
+getopts(':amsirB:A:', \%opt) or usage;
 
 chdir($opt{'r'} ||= $ENV{'BB_ROOT'} ||= '/var/local/backup') or fatal "chdir $ENV{BB_ROOT}: $!";
 
@@ -23,8 +23,18 @@ my @eum = map { glob("targets/$_/series/*/[0-9]*.eum") } @targets;
 fatal "Can't find any targets: $t" if !@eum;
 my (%tsb2tnf, %choice);
 foreach my $f (@ARGV) {
-    my $rx = $opt{m} ? qr/$f/ : undef;
-    my @cmd = ($rx ? 'egrep' : 'fgrep');
+    my (@cmd, $rx);
+    if ($opt{'m'}) {
+        @cmd = qw(egrep);
+        $rx = $opt{'i'} ? qr/(?i)$f/ : qr/$f/; 
+    }
+    elsif ($opt{'s'}) {
+        @cmd = qw(egrep);
+        $rx = $opt{'i'} ? qr/(?i)\Q$f\E/ : qr/\Q$f\E/; 
+    }
+    else {
+        @cmd = qw(fgrep);
+    }
     push @cmd, '-i' if $opt{'i'};
     open my $fh, '-|', @cmd, $f, @eum or fatal "fgrep: $!";
     while (<$fh>) {
