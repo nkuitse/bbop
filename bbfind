@@ -10,16 +10,18 @@ use constant SEGLEN => 64*1024*1024;
 sub usage;
 sub fatal;
 
-my %opt;
+my %opt = (
+    'e' => '[1-9]*/[1-9]*',  # series/backup
+);
 
-getopts(':amsirB:A:', \%opt) or usage;
+getopts(':eamsirB:A:', \%opt) or usage;
 
 chdir($opt{'r'} ||= $ENV{'BB_ROOT'} ||= '/var/local/backup') or fatal "chdir $ENV{BB_ROOT}: $!";
 
 usage if @ARGV < 2;
 my $t = shift;
 my @targets = grep { $_ eq $t || m{^$t/} } all_targets();
-my @eum = map { glob("targets/$_/series/*/[0-9]*.eum") } @targets;
+my @eum = map { glob("targets/$_/series/$opt{e}.eum") } @targets;
 fatal "Can't find any targets: $t" if !@eum;
 my (%tsb2tnf, %choice);
 foreach my $f (@ARGV) {
