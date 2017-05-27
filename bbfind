@@ -14,7 +14,7 @@ my %opt = (
     'e' => '[1-9]*/[1-9]*',  # series/backup
 );
 
-getopts(':eamsirB:A:', \%opt) or usage;
+getopts(':e:amsirB:A:', \%opt) or usage;
 
 chdir($opt{'r'} ||= $ENV{'BB_ROOT'} ||= '/var/local/backup') or fatal "chdir $ENV{BB_ROOT}: $!";
 
