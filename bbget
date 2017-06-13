@@ -3,7 +3,18 @@
 use strict;
 use warnings;
 
+sub usage;
+sub fatal;
+
 my $root = $ENV{BBOP_ROOT} // '/var/local/backup';
+
+if (@ARGV == 1) {
+    $ARGV[0] =~ m{^([^/]+/[^/]+)/(current|\d+)/(\w+)(/.+)$} or usage;
+    my ($t, $s, $b, $f) = ($1, $2, $3, $4);
+    my $eum = "$root/targets/$t/series/$s/$b.eum";
+    fatal "no such backup: $t $s $b" if !-e $eum;
+    open STDIN, '-|', 'bbfind', '-e', "$s/$b", $t, $f or fatal "fgrep $f $eum: $!";
+}
 
 while (<STDIN>) {
     chomp;
