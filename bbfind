@@ -27,15 +27,15 @@ my (%tsb2tnf, %choice);
 foreach my $f (@ARGV) {
     my (@cmd, $rx);
     if ($opt{'m'}) {
-        @cmd = qw(egrep);
+        @cmd = qw(egrep -H);
         $rx = $opt{'i'} ? qr/(?i)$f/ : qr/$f/; 
     }
     elsif ($opt{'s'}) {
-        @cmd = qw(egrep);
+        @cmd = qw(egrep -H);
         $rx = $opt{'i'} ? qr/(?i)\Q$f\E/ : qr/\Q$f\E/; 
     }
     else {
-        @cmd = qw(fgrep);
+        @cmd = qw(fgrep -H);
     }
     push @cmd, '-i' if $opt{'i'};
     open my $fh, '-|', @cmd, $f, @eum or fatal "fgrep: $!";
