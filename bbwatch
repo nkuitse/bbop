@@ -3,6 +3,7 @@
 use strict;
 use warnings;
 
+use IO::Select;
 use File::Basename qw(basename dirname);
 use Getopt::Long
     qw(:config posix_default gnu_compat require_order bundling no_ignore_case);
@@ -17,33 +18,169 @@ my $t0p_root = '/var/local/t0p';
 
 my $wait;
 
-my @targets = `zubak lt`;
-fatal "read targets" if $? >> 8;
-chomp @targets;
-
-my @jobs = `t0job -lv | fgrep ' w ' | cut -c 5-`;
-fatal "read jobs" if $? >> 8;
-chomp @jobs;
-
-my %target_status = all_target_statuses(@targets);
-my %job_status = all_job_statuses(@jobs);
-
 my @running = running();
 while (!@running && $wait) {
     sleep 5;
     @running = running();
 }
+foreach my $t (@running) {
+    my ($s, $b) = current_backup($t);
+    if (!defined $s) {
+        print STDERR "DONE $t\n";
+        next;
+    }
+    my (%proc, %done);
+    my ($fheum, $line, $seg, $size);
+    my ($min, $sec) = (0, 0);
+    my $t0 = my $tn = time;
+    my $io = IO::Select->new;
+    my @f = glob("$backup_root/targets/$t/series/$s/$b.*");
+    foreach (@f) {
+        if (/^(.+\.[0-9]+)\.gz$/) {
+            delete $proc{$1};
+            $done{$_} = 1;
+        }
+        elsif (/\.[0-9]+$/) {
+            $proc{$_} = 1;
+        }
+        elsif (/\.eum$/) {
+            if (!defined $fheum) {
+                $proc{$_} = 1;
+                open $fheum, '-|', qw(tail -f -n 99999), $_ or die;
+                $io->add($fheum);
+            }
+        }
+        elsif (/\.backup$/) {
+            1;
+        }
+        else {
+            1;
+        }
+    }
+    local $SIG{ALRM} = sub {
+        $tn = time;
+        alarm 2;
+    };
+    alarm 2;
+    while (1) {
+        if ($io && $io->can_read) {
+            $line = <$fheum>;
+            if ($line =~ /^\$begin (.+)$/) {
+                $t0 = $1;
+            }
+            elsif ($line =~ /^\$end (.+)$/) {
+                $tn = $1;
+                if ($io->can_read) {
+                    $line = <$fheum>;
+                    if ($line && $line =~ /^\$size (.+)$/) {
+                        $size = $1;
+                        close $fheum;
+                        $io->remove($fheum);
+                        undef $io;
+                    }
+                }
+            }
+            elsif ($line =~ /^\^([0-9]+)/) {
+                $seg = $1;
+            }
+        }
+    }
+    continue {
+        my $elapsed = $tn - $t0;
+        $min = int($elapsed / 60);
+        $sec = $elapsed % 60;
+        printf STDERR "\rRUNNING: target %s segment %d elapsed %dm %02ds",
+            $t, $seg||0, $min, $sec;
+    }
+    print STDERR "\n";
+    # Watch files being compressed
+    while ($seg) {
+        @f = glob("$backup_root/targets/$t/series/$s/$b.*");
+        foreach (@f) {
+            if (/^(.+\.[0-9]+)\.gz$/ && !$done{$_}) {
+                $seg--;
+                $done{$_} = 1;
+            }
+        }
+    }
+    continue {
+        printf STDERR "\rCOMPRESSING: target %s segment %d elapsed %dm %02ds",
+            $t, $seg, $min, $sec;
+        sleep 1;
+    }
+    print STDERR "\n";
+    1;  # TODO Now watch it being written to tape
+}
 
 sub running {
-    foreach my $t (keys %target_status) {
-        my $s = $target_status{$t};
-        delete $target_status{$t}, next if $s eq 'done';
+    my %running;
+    foreach my $f (glob("$backup_root/queue/*\@")) {
+        open my $fh, '<', $f or die;
+        while (<$fh>) {
+            chomp;
+            $running{$_} = 1;
+        }
     }
-    foreach my $t (keys %target_status) {
-        my $s = $target_status{$t};
-        delete $target_status{$t}, next if $s eq 'done';
-    }
+    return sort keys %running;
 }
+
+sub current_backup {
+    my ($t) = @_;
+    my @s = target_series($t);
+    return if !@s;
+    my @b = target_series_backups($t, $s[-1]);
+    return if !@b;
+    return ($s[-1], pop @b);
+}
+
+sub target_series {
+    my ($t) = @_;
+    sort { $a <=> $b } map { chomp; $_ } `zubak ls $t`;
+}
+
+sub target_series_backups {
+    my ($t, $s) = @_;
+    sort { $a cmp $b } map { chomp; $_ } `zubak lb $t $s`;
+}
+
+sub backup_segments {
+    my ($t, $s, $b) = @_;
+    return sort byseg grep { /\.[0-9]+$/ } glob("$backup_root/targets/$t/series/$s/$b.*");
+}
+
+sub backup_metafiles {
+    my ($t, $s, $b) = @_;
+    return grep { !/\.[0-9]+$/ } glob("$backup_root/targets/$t/series/$s/$b.*");
+}
+
+sub byseg {
+    my @x;
+    push @x, $1 if $a =~ /\.([0-9]+)$/;
+    push @x, $1 if $b =~ /\.([0-9]+)$/;
+    @x == 2 ? $x[0] <=> $x[1] : 0;
+}
+
+### sub running {
+###     foreach my $t (keys %target_status) {
+###         my $s = $target_status{$t};
+###         delete $target_status{$t}, next if $s eq 'done';
+###     }
+###     foreach my $t (keys %target_status) {
+###         my $s = $target_status{$t};
+###         delete $target_status{$t}, next if $s eq 'done';
+###     }
+### }
+### 
+### my @targets = `zubak lt`;
+### fatal "read targets" if $? >> 8;
+### chomp @targets;
+### 
+### my @jobs = `t0job -lv | fgrep ' w ' | cut -c 5-`;
+### fatal "read jobs" if $? >> 8;
+### chomp @jobs;
+### 
+### my %target_status = all_target_statuses(@targets);
+### my %job_status = all_job_statuses(@jobs);
 
 sub all_target_statuses {
     map {

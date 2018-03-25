@@ -112,10 +112,11 @@ cmd_conf() {
 }
 
 cmd_queue() {
-    typeset opt q qheld list=true add=false clear=false release=false hold=false tally=false dly wly mly
+    typeset usage='[-v] [-dwm] [-akhutl] ...'
+    typeset opt q qheld list=true add=false clear=false release=false hold=false tally=false all=false future=false running=false dly wly mly
     typeset -a targets queues
     print -P '%D{d%H w%a m%d}' | tr A-Z a-z | read dly wly mly
-    while getopts :vakhutldwm opt; do
+    while getopts :vakhutlAFRdwm opt; do
         case $opt in
             (v) verbose=true ;;
             (a) add=true ;;
@@ -124,17 +125,21 @@ cmd_queue() {
             (u) release=true ;;
             (t) tally=true ;;
             (l) list=true ;;
+                (A) all=true ;;
+                (F) future=true; running=false ;;
+                (R) running=true; future=false ;;
             (d) queues+=( $dly ) ;;
             (w) queues+=( $wly ) ;;
             (m) queues+=( $mly ) ;;
-            (*) usage ;;
+            (*) usage $usage ;;
         esac
     done
     shift $(( OPTIND - 1 ))
     if $add; then
-        (( $#queues < 2 )) || usage
+        usage='-a [-v] [-dwm] [-khutl] QUEUE TARGET...'
+        (( $#queues < 2 )) || usage $usage
         (( $#queues == 0 )) || set $queues $@
-        (( $# > 1 )) || usage
+        (( $# > 1 )) || usage $usage
         q=$1; shift
         if [[ $q != [0-9] && $q != m[0-9][0-9] && $q != w[a-z][a-z][a-z] && $q != d[0-9][0-9] ]]; then
             print "bbqueue: warning: adding to a non-standard queue: $q" >&2
@@ -142,13 +147,15 @@ cmd_queue() {
         ! $hold || q=${q}+
         print -l $(targets "$@") >> queue/$q
     elif $clear; then
+        usage='-k [-h] [-dwm|QUEUE]...'
         set -- $queues $@
-        (( $# )) || usage
+        (( $# )) || usage $usage
         for q in $@:t; do
             ! $hold || q=${q}+
             [[ ! -s queue/$q ]] || : > queue/$q
         done
     elif $hold; then
+        usage='-h [-dwm|QUEUE]...'
         set -- $queues $@
         (( $# )) || set -- queue/$dly(.N) queue/$wly(.N) queue/$mly(.N)
         (( $# )) || return 0
@@ -163,6 +170,7 @@ cmd_queue() {
             fi
         done
     elif $release; then
+        usage='-u [-dwm|QUEUE]...'
         set -- $queues $@
         (( $# )) || set -- queue/$dly+(.N) queue/$wly+(.N) queue/$mly+(.N)
         (( $# )) || return 0
@@ -199,8 +207,19 @@ cmd_queue() {
             done | sort -u | wc -l
         fi
     else
-        set -- $queues $@
-        (( $# )) || set -- queue/[0-9](.N) queue/$dly(.N) queue/$wly(.N) queue/$mly(.N)
+        if $all; then
+            verbose=true
+            set -- queue/*(.N)
+        elif $future; then
+            verbose=true
+            set -- queue/*+(.N)
+        elif $running; then
+            verbose=true
+            set -- queue/*@(.N)
+        else
+            set -- $queues $@
+            (( $# )) || set -- queue/[0-9](.N) queue/$dly(.N) queue/$wly(.N) queue/$mly(.N)
+        fi
         (( $# )) || exit 0
         if $verbose; then
             for q in $@:t; do
